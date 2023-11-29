@@ -1,5 +1,7 @@
 #include "ads1120.h"
 
+#if __has_include(<SPI.h>)
+
 #define CMD_POWER_DOWN      0x03
 #define CMD_RESET           0x07
 #define CMD_START_SYNC      0x08
@@ -19,8 +21,8 @@ ADS1120::ADS1120(SPIClass* spi, unsigned cs, unsigned drdy, unsigned clkspeed) :
 
 bool ADS1120::begin()
 {
-    pinMode(_cs, OUTPUT);
-    pinMode(_drdy, INPUT);
+    sysPinMode(_cs, OUTPUT);
+    sysPinMode(_drdy, INPUT);
 
     reset();
     _sendCommand(CMD_START_SYNC);
@@ -230,29 +232,29 @@ void ADS1120::setDRDYMode(unsigned mode)
 void ADS1120::_sendCommand(uint8_t cmd)
 {
     _spi->beginTransaction(SPISettings(_clkspeed, MSBFIRST, SPI_MODE1));
-    digitalWrite(_cs, LOW);
+    sysDigitalWrite(_cs, LOW);
     _spi->transfer(cmd);
-    digitalWrite(_cs, HIGH);
+    sysDigitalWrite(_cs, HIGH);
     _spi->endTransaction();
 }
 
 void ADS1120::_writeReg(uint8_t addr, Registers reg)
 {
     _spi->beginTransaction(SPISettings(_clkspeed, MSBFIRST, SPI_MODE1));
-    digitalWrite(_cs, LOW);
+    sysDigitalWrite(_cs, LOW);
     _spi->transfer(CMD_WRITE_REG | (addr << 2));
     _spi->transfer(reg.raw);
-    digitalWrite(_cs, HIGH);
+    sysDigitalWrite(_cs, HIGH);
     _spi->endTransaction();
 }
 
 ADS1120::Registers ADS1120::_readReg(uint8_t addr)
 {
     _spi->beginTransaction(SPISettings(_clkspeed, MSBFIRST, SPI_MODE1));
-    digitalWrite(_cs, LOW);
+    sysDigitalWrite(_cs, LOW);
     _spi->transfer(CMD_READ_REG | (addr << 2));
     Registers reg = _spi->transfer(0xFF);
-    digitalWrite(_cs, HIGH);
+    sysDigitalWrite(_cs, HIGH);
     _spi->endTransaction();
     return reg;
 }
@@ -260,17 +262,17 @@ ADS1120::Registers ADS1120::_readReg(uint8_t addr)
 bool ADS1120::_readData(uint16_t& data, unsigned timeout)
 {
     _spi->beginTransaction(SPISettings(_clkspeed, MSBFIRST, SPI_MODE1));
-    digitalWrite(_cs, LOW);
+    sysDigitalWrite(_cs, LOW);
 
     if (_cmode == SingleShot)
         _spi->transfer(CMD_START_SYNC);
 
     uint64_t end = sysMicros() + timeout;
-    while (digitalRead(_drdy) == HIGH)
+    while (sysDigitalRead(_drdy) == HIGH)
     {
         if (sysMicros() >= end)
         {
-            digitalWrite(_cs, HIGH);
+            sysDigitalWrite(_cs, HIGH);
             _spi->endTransaction();
             return false;
         }
@@ -281,3 +283,5 @@ bool ADS1120::_readData(uint16_t& data, unsigned timeout)
     _spi->endTransaction();
     return true;
 }
+
+#endif

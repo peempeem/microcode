@@ -56,6 +56,7 @@ class GridMessageHub
                     uint64_t timestamp;
                     uint32_t history;
                     uint16_t id;
+                    uint8_t idx;
                     uint8_t distance;
                     std::vector<uint16_t> connections;
                 };
@@ -90,7 +91,7 @@ class GridMessageHub
                     uint16_t id;
                     uint8_t distance;
                     uint8_t len;
-                    NodeConnection connections[];
+                    uint16_t connections[];
                 });
 
                 PACK(struct DeathNoteBytes

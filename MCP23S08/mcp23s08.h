@@ -1,6 +1,9 @@
 #pragma once
 
 #include "../hal/hal.h"
+
+#if __has_include(<SPI.h>)
+
 #include <SPI.h>
 
 class MCP23S08
@@ -44,3 +47,5 @@ class MCP23S08
         void _writeReg(uint8_t addr, uint8_t data);
         uint8_t _readReg(uint8_t addr);
 };
+
+#endif

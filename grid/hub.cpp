@@ -116,25 +116,24 @@ GridMessageHub::NetworkTable::NetworkTable(const uint8_t* data, unsigned expire)
         idx += sizeof(NodeBytes) + node->len * sizeof(uint16_t);
     }
 
-    len = ((ListHeader*) (data + idx))->len;
+    /*len = ((ListHeader*) (data + idx))->len;
     idx += sizeof(ListHeader);
     for (unsigned i = 0; i < len; i++)
     {
         DeathNote* deathNote = (DeathNote*) (data + idx);
         deathNotes.insert(deathNote->victim, *deathNote);
-    }
+    }*/
 }
 
 void GridMessageHub::NetworkTable::update(uint16_t id)
 {
     uint64_t time = sysMicros();
 
-    for (unsigned key : nodes.keys())
+    /*for (unsigned key : nodes.keys())
     {
         if (time >= nodes[key].arrival + _expire * 1000)
         {
             DeathNote& deathNote = deathNotes[key];
-            deathNote.arrival = time;
             deathNote.victim = key;
             deathNote.expire = _expire;
         }
@@ -150,7 +149,7 @@ void GridMessageHub::NetworkTable::update(uint16_t id)
             deathNotes.remove(key);
         else
             deathNote.expire -= dt;
-    }
+    }*/
 }
 
 SharedBuffer GridMessageHub::NetworkTable::serialize()
@@ -176,13 +175,13 @@ SharedBuffer GridMessageHub::NetworkTable::serialize()
         idx += sizeof(NodeBytes) + node.connections.size() * sizeof(uint16_t);
     }
 
-    ((ListHeader*) buf.data() + idx)->len = nodes.size();
+    /*((ListHeader*) buf.data() + idx)->len = nodes.size();
     idx += sizeof(ListHeader);
     for (DeadNode& deadNode : deadNodes)
     {
         *((DeadNode*) (buf.data() + idx)) = deadNode;
         idx += sizeof(DeadNode);
-    }
+    }*/
     
     return buf;
 }
@@ -196,7 +195,7 @@ std::string GridMessageHub::NetworkTable::toString()
     for (Node& node : nodes)
     {
         ss << "| Node " << node.id << ":\n";
-        ss << "| Last Update: " << node.timestamp - node.lastUpdate << "\n";
+        //ss << "| Last Update: " << node.timestamp - node.lastUpdate << "\n";
         ss << "| Distance: " << (unsigned) node.distance << "\n";
         ss << "| Connections:";
         /*for (NetworkTable::NodeConnection& conn : node.connections)
@@ -242,12 +241,12 @@ void GridMessageHub::update()
     //     _ios[i].in.unlock();
     // }
 
-    _netTable.update();
+    //_netTable.update();
 
     {
         NetworkTable::Node& node = _netTable.nodes[_id];
         node.timestamp = sysMicros();
-        node.lastUpdate = node.timestamp;
+        //node.lastUpdate = node.timestamp;
     }
 
 
