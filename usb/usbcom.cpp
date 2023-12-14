@@ -1,101 +1,112 @@
 #include "usbcom.h"
 #include "../util/crypt.h"
-#include <string.h>
+#include "../hal/hal.h"
 
-/*
-USBMessage::USBMessage(unsigned type, const uint8_t* data, unsigned len)
+enum ReservedTypes
 {
-    _buf = SharedBuffer(sizeof(msg_t) + len);
-    ((msg_t*) _buf.data())->header.data.type = type;
-    ((msg_t*) _buf.data())->header.data.len = len;
-    ((msg_t*) _buf.data())->header.data.hash = hash32(data, len);
-    ((msg_t*) _buf.data())->header.hash = hash32((uint8_t*) &((msg_t*) _buf.data())->header.data, sizeof(USBMSG::HEADER::DATA));
-    memcpy(((msg_t*) _buf.data())->data, data, len);
+    ping,
+    reping,
+    setbaud,
+    nonimp3
+};
+
+USBMessageBroker::Message::Message(uint8_t type, uint8_t priority, const uint8_t* data, uint16_t len)
+{
+    _buf = SharedBuffer(sizeof(Fields) + len);
+    ((Fields*) _buf.data())->header.type = type;
+    ((Fields*) _buf.data())->header.priority = priority;
+    ((Fields*) _buf.data())->header.len = len;
+    ((Fields*) _buf.data())->header.dhash = hash32(data, len);
+    ((Fields*) _buf.data())->header.hhash = hash32((const uint8_t*) &((Fields*) _buf.data())->header, sizeof(Fields::Header) - sizeof(Fields::Header::hhash));
+    memcpy(((Fields*) _buf.data())->data, data, len);
 }
 
-USBMessage::USBMessage(SharedBuffer& buf)
+USBMessageBroker::Message::Message(Fields::Header& header)
 {
-    _buf = buf;
+    _buf = SharedBuffer(sizeof(Fields) + header.len);
+    ((Fields*) _buf.data())->header = header;
 }
 
-unsigned USBMessage::type()
+void USBMessageBroker::begin(unsigned baudrate, int rx, int tx)
 {
-    return ((msg_t*) _buf.data())->header.data.type;
+    sysSerialInit(_port, baudrate, rx, tx);
 }
 
-uint8_t* USBMessage::data()
+void USBMessageBroker::send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len)
 {
-    return ((msg_t*) _buf.data())->data;
-}
-
-unsigned USBMessage::dataSize()
-{
-    return ((msg_t*) _buf.data())->header.data.len;
-}
-
-uint8_t* USBMessage::buffer()
-{
-    return _buf.data();
-}
-
-unsigned USBMessage::bufferSize()
-{
-    return _buf.size();
-}
-
-USBMessageBroker::USBMessageBroker(unsigned port, float ramSendRate) : _port(port), _ramSendRate(ramSendRate)
-{
-    
-}
-
-void USBMessageBroker::init(unsigned baudrate)
-{
-    sysSerialInit(_port, baudrate);
-}
-
-USBMessage& USBMessageBroker::front()
-{
-    return _inq.front();
-}
-
-void USBMessageBroker::pop()
-{
-    _inqLock.lock();
-    _inq.pop();
-    _inqLock.unlock();
-}
-
-bool USBMessageBroker::size()
-{
-    return _inq.size();
-}
-
-void USBMessageBroker::send(unsigned type, const uint8_t* data, unsigned len)
-{
-    _outqLock.lock();
-    _outq.emplace(type, data, len);
-    _outqLock.unlock();
+    _send(type + sizeof(ReservedTypes), priority + 1, data, len);
 }
 
 void USBMessageBroker::update()
 {
-    handleInbound();
-    handleOutbound();
-}
-
-void USBMessageBroker::handleInbound()
-{
-
-}
-
-void USBMessageBroker::handleOutbound()
-{
-    while (!_outq.empty())
+    while (sysSerialAvailable(_port))
     {
-        sysSerialWrite(_port, _outq.front().buffer(), _outq.front().bufferSize());
-        _outqLock.lock();
-        _outq.pop();
-        _outqLock.unlock();
+        uint8_t byte = sysSerialRead(_port);
+        if (!_foundHead)
+        {
+            _buf.insert(byte);
+            if (((Message::Fields::Header*) _buf.data)->hhash == hash32(_buf.data, sizeof(Message::Fields::Header) - sizeof(Message::Fields::Header::hhash)))
+            {
+                _rmsg = Message(*((Message::Fields::Header*) _buf.data));
+                _idx = 0;
+                if (_rmsg.dataSize() == 0)
+                {
+                    if (_rmsg.type() < sizeof(ReservedTypes))
+                        _rmsgs.push(_rmsg, _rmsg.priority());
+                    else
+                    {
+                        ((Message::Fields*) _rmsg.raw())->header.type -= sizeof(ReservedTypes);
+                        messages.push(_rmsg, _rmsg.priority());
+                    }
+                }
+                else
+                    _foundHead = true;                
+            }
+        }
+        else
+        {
+            _rmsg.data()[_idx++] = byte;
+            if (_idx >= _rmsg.dataSize())
+            {
+                if (((Message::Fields*) _rmsg.raw())->header.dhash == hash32(_rmsg.data(), _rmsg.dataSize()))
+                {
+                    if (_rmsg.type() < sizeof(ReservedTypes))
+                        _rmsgs.push(_rmsg, _rmsg.priority());
+                    else
+                    {
+                        ((Message::Fields*) _rmsg.raw())->header.type -= sizeof(ReservedTypes);
+                        messages.push(_rmsg, _rmsg.priority());
+                    }
+                }
+                _foundHead = false;
+            }
+        }
+    }
+
+    while (_rmsgs.size())
+    {
+        Message& msg = _rmsgs.front();
+        switch (msg.type())
+        {
+            case ReservedTypes::ping:
+                _send(ReservedTypes::reping, msg.priority(), msg.data(), msg.dataSize());
+                break;
+            
+            default:
+                break;
+        }
+        _rmsgs.pop();
+    }
+
+    while (_smsgs.size())
+    {
+        sysSerialWrite(_port, _smsgs.front().raw(), _smsgs.front().size());
+        _smsgs.pop();
     }
 }
-*/
+
+void USBMessageBroker::_send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len)
+{
+    Message msg(type, priority, data, len);
+    _smsgs.push(msg, priority);
+}

@@ -1,73 +1,63 @@
 #pragma once
 
-/*
-#include "../hal/hal.h"
-#include "../util/rate.h"
 #include "../util/sharedbuf.h"
+#include "../util/priorityqueue.h"
 #include "../util/buf.h"
-#include <queue>
-
-typedef struct USBMSG
-{
-    typedef struct HEADER
-    {
-        typedef struct DATA
-        {
-            unsigned type;
-            unsigned len;
-            unsigned hash;
-        } msghd_t;
-
-        msghd_t     data;
-        unsigned    hash;
-    } msgh_t;
-
-    msgh_t      header;
-    uint8_t     data[];
-} msg_t;
-
-class USBMessage
-{
-    public:
-        USBMessage(unsigned type, const uint8_t* data, unsigned len);
-        USBMessage(SharedBuffer& buf);
-
-        unsigned type();
-        uint8_t* data();
-        unsigned dataSize();
-
-        uint8_t* buffer();
-        unsigned bufferSize();
-    
-    private:
-        SharedBuffer _buf;
-};
 
 class USBMessageBroker
 {
     public:
-        USBMessageBroker(unsigned port, float ramSendRate=4);
+        class Message
+        {
+            public:
+                PACK(struct Fields
+                {
+                    struct Header
+                    {
+                        uint8_t type;
+                        uint8_t priority;
+                        uint16_t len;
+                        uint32_t dhash;
+                        uint32_t hhash; 
+                    } header;
+                    uint8_t data[];
+                });
 
-        void init(unsigned baudrate);
+                Message() {}
+                Message(uint8_t type, uint8_t priority, const uint8_t* data, uint16_t len);
+                Message(Fields::Header& header);
 
-        USBMessage& front();
-        void pop();
-        bool size();
+                uint8_t type() { return ((Fields*) _buf.data())->header.type; }
+                uint8_t priority() { return ((Fields*) _buf.data())->header.priority; }
 
-        void send(unsigned type, const uint8_t* data, unsigned len);
-        
+                uint8_t* raw() { return _buf.data(); };
+                unsigned size() { return _buf.size(); }
+
+                uint8_t* data() { return ((Fields*) _buf.data())->data; }
+                unsigned dataSize() { return ((Fields*) _buf.data())->header.len; };
+
+            private:
+                SharedBuffer _buf;
+        };
+
+        PriorityQueue<Message> messages;
+
+        USBMessageBroker(unsigned port) : _port(port) {}
+
+        void begin(unsigned baudrate, int rx=-1, int tx=-1);
+
+        void send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len);
         void update();
-        void handleInbound();
-        void handleOutbound();
     
     private:
         unsigned _port;
-        Rate _ramSendRate;
-        std::queue<USBMessage> _outq;
-        std::queue<USBMessage> _inq;
-        Lock _outqLock;
-        Lock _inqLock;
-        FIFOBuffer<USBMSG::HEADER> _fifo;
-};
+        FIFOBuffer<sizeof(Message::Fields::Header)> _buf;
+        Message _rmsg;
+        bool _foundHead = false;
+        unsigned _idx;
 
-*/
+        PriorityQueue<Message> _smsgs;
+        PriorityQueue<Message> _rmsgs;
+
+        void _send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len);
+};

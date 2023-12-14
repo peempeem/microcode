@@ -15,7 +15,7 @@ class GridPacket
     public:
         PACK(struct Fields
         {
-            typedef struct Header
+            struct Header
             {
                 uint8_t type;
                 uint8_t idx;
@@ -28,9 +28,7 @@ class GridPacket
                 uint16_t id;
                 uint32_t dhash;
                 uint32_t hhash;
-            };
-
-            Header header;
+            } header;
             uint8_t data[];
         });
 

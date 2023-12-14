@@ -27,7 +27,19 @@ bool ADS1120::begin()
     reset();
     _sendCommand(CMD_START_SYNC);
 
-    return true;
+    Registers reg = _readReg(REG0_ADDR);
+    reg.reg0.gain_config = Gain128;
+    _writeReg(REG0_ADDR, reg);
+    reg = _readReg(REG0_ADDR);
+
+    if (reg.reg0.gain_config == Gain128)
+    {
+        reg.reg0.gain_config = Gain1;
+        _writeReg(REG0_ADDR, reg);
+        return true;
+    }
+
+    return false;
 }
 
 void ADS1120::reset()
@@ -41,13 +53,13 @@ void ADS1120::powerDown()
     _sendCommand(CMD_POWER_DOWN);
 }
 
-float ADS1120::readVoltage()
+float ADS1120::readVoltage(float ref)
 {
     uint16_t data;
     if (!_readData(data))
-        return -1;
+        return nanf("");
     
-    return data;
+    return ref * ((int16_t) data / 32768.0f) / (float) _gain;
 }
 
 float ADS1120::readTemperature()
@@ -80,6 +92,7 @@ void ADS1120::setGain(unsigned gain)
         Registers reg = _readReg(REG0_ADDR);
         reg.reg0.gain_config = gain;
         _writeReg(REG0_ADDR, reg);
+        _gain = 1 << gain;
     }
 }
 

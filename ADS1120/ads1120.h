@@ -143,7 +143,7 @@ class ADS1120
         void reset();
         void powerDown();
 
-        float readVoltage();
+        float readVoltage(float ref);
         float readTemperature();
 
         void setMux(unsigned mux);
@@ -209,6 +209,7 @@ class ADS1120
         unsigned _clkspeed;
         int _mode = -1;
         int _cmode = -1;
+        unsigned _gain = 1;
 
         void _sendCommand(uint8_t cmd);
         void _writeReg(uint8_t addr, Registers reg);

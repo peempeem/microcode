@@ -118,38 +118,3 @@ bool GridMessage::received()
     _joiner = std::vector<SharedBuffer>();
     return true;
 }
-
-
-
-
-    // std::vector<unsigned> priorities = _rmsgs.keys();
-    // std::sort(priorities.begin(), priorities.end());
-
-    // for (unsigned priority : priorities)
-    // {
-    //     Hash<Hash<GridMessage>>& pmsgs = _rmsgs[priority];
-
-    //     for (unsigned sender : pmsgs.keys())
-    //     {
-    //         Hash<GridMessage>& smsgs = pmsgs[sender];
-
-    //         for (unsigned id : smsgs.keys())
-    //         {
-    //             GridMessage& msg = smsgs[id];
-
-    //             if (msg.received())
-    //             {
-    //                 msgs.push(msg);
-    //                 smsgs.remove(id);
-    //             }
-    //             else if (msg.isDead())
-    //                 smsgs.remove(id);
-    //         }
-
-    //         if (smsgs.empty())
-    //             pmsgs.remove(sender);
-    //     }
-
-    //     if (pmsgs.empty())
-    //         _rmsgs.remove(priority);
-    // }

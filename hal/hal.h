@@ -34,7 +34,7 @@ static unsigned sysDigitalRead(unsigned pin);
 static void sysDigitalWrite(unsigned pin, unsigned state);
 static unsigned sysAnalogRead(unsigned pin);
 
-static void sysSerialInit(unsigned port, unsigned baudrate);
+static void sysSerialInit(unsigned port, unsigned baudrate, int rx=-1, int tx=-1);
 static bool sysSerialAvailable(unsigned port);
 static uint8_t sysSerialRead(unsigned port);
 static void sysSerialWrite(unsigned port, uint8_t* data, unsigned len);

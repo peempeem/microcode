@@ -3,7 +3,7 @@
 #include <vector>
 #include <list>
    
-template<class V> class Hash
+template <class V> class Hash
 {
     public:
         struct Node

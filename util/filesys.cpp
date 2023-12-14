@@ -1,8 +1,7 @@
 #include "filesys.h"
 #include "log.h"
 #include <string.h>
-
-#if __has_include(<SPIFFS.h>)
+#include <SPIFFS.h>
 
 const static char* logHeader = "filesys";
 
@@ -43,21 +42,11 @@ unsigned FileSys::FileData::size()
 }
 
 bool FileSys::init(bool format) {
-    log(logHeader, "Loading filesystem", false);
-
-    if (!SPIFFS.begin(true, "/spiffs", 32))
-    {
-        logf();
-        log(logHeader, "Failed to mount SPIFFS filesystem (first boot / bad flash)");
-        return false;
-    }
-    logs();
-    return true;
+    return SPIFFS.begin(true, "/spiffs", 32);
 }
 
 bool FileSys::read(const char* path, uint8_t* buf, int size, int seek)
 {
-
     File file = SPIFFS.open(path);
     if (!file) 
     {
@@ -173,5 +162,3 @@ void FileSys::logMap(std::vector<FileSys::FileData> files)
     }
     log(logHeader, "Done enumerating");
 }
-
-#endif

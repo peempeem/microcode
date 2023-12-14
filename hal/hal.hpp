@@ -32,9 +32,9 @@ static float fcos(float value)
 #if __has_include(<Arduino.h>)
 
 #if !__has_include(<esp.h>)
-uint32_t sysMicros()
+uint64_t sysMicros()
 {
-	return micros();
+	return millis() * 1000 + micros() % 1000;
 }
 #endif
 
@@ -93,20 +93,20 @@ static unsigned sysAnalogRead(unsigned pin)
 }
 #endif
 
-static void sysSerialInit(unsigned port, unsigned baudrate)
+static void sysSerialInit(unsigned port, unsigned baudrate, int rx, int tx)
 {
     switch (port)
     {
         case 0:
-            Serial.begin(baudrate);
+            Serial.begin(baudrate, SERIAL_8N1, rx, tx);
             break;
         
         case 1:
-            Serial1.begin(baudrate);
+            Serial1.begin(baudrate, SERIAL_8N1, rx, tx);
             break;
         
         case 2:
-            Serial2.begin(baudrate);
+            Serial2.begin(baudrate, SERIAL_8N1, rx, tx);
             break;
     }
 }
