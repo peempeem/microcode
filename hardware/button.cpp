@@ -1,14 +1,12 @@
 #include "button.h"
 #include "../hal/hal.h"
 
-#if defined sysPinMode && defined sysDigitalRead
-
-Button::Button() : Lock()
+Button::Button() : BinarySemaphore()
 {
 
 }
 
-Button::Button(unsigned pin, bool activeLow, bool recordTaps, unsigned debounce, unsigned multitap) : Lock(), pin(pin), recordTaps(recordTaps), debounce(debounce), multitap(multitap)
+Button::Button(unsigned pin, bool activeLow, bool recordTaps, unsigned debounce, unsigned multitap) : BinarySemaphore(), pin(pin), recordTaps(recordTaps), debounce(debounce), multitap(multitap)
 {
     pressed = activeLow ? 0 : 1;
     released = activeLow ? 1 : 0;
@@ -16,20 +14,20 @@ Button::Button(unsigned pin, bool activeLow, bool recordTaps, unsigned debounce,
 
 void Button::init()
 {
-    sysPinMode(pin, PinMode::inputPullup);
-    lastState = sysDigitalRead(pin);
+    pinMode(pin, INPUT_PULLUP);
+    lastState = digitalRead(pin);
 }
 
 void Button::update()
 {
     if (debounce.isRinging())
     {
-        unsigned val = sysDigitalRead(pin);
+        unsigned val = digitalRead(pin);
         if (val == lastState)
         {
             if (recordTaps && currentTapEvent.taps && multitap.isRinging())
             {
-                currentTapEvent.end = sysMillis();
+                currentTapEvent.end = sysTime();
                 lock();
                 tapEvents.push(currentTapEvent);
                 unlock();
@@ -43,14 +41,14 @@ void Button::update()
                 if (recordTaps)
                 {
                     if (!currentTapEvent.taps)
-                        currentTapEvent.start = sysMillis();
+                        currentTapEvent.start = sysTime();
                     currentTapEvent.taps++;
                     multitap.reset();
                 }
             }
             debounce.reset();
             lastState = val;
-            lastStageChange = sysMillis();
+            lastStageChange = sysTime();
         }
     }
 }
@@ -99,15 +97,12 @@ unsigned Button::pressedElapsedTime()
 {
     if (isReleased())
         return 0;
-    return sysMillis() - lastStageChange;
+    return millis() - lastStageChange;
 }
 
 unsigned Button::releasedElapsedTime()
 {
     if (isPressed())
         return 0;
-    return sysMillis() - lastStageChange;
+    return millis() - lastStageChange;
 }
-
-#endif
-

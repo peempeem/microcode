@@ -8,7 +8,7 @@
 
  unsigned Graph::newNode()
  {
-    nodes.insert(_nodeCount, Node(_nodeCount));
+    nodes[_nodeCount] = Node(_nodeCount);
     return _nodeCount++;
  }
 

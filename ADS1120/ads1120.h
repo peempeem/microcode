@@ -1,9 +1,6 @@
 #pragma once
 
 #include "../hal/hal.h"
-
-#if __has_include(<SPI.h>)
-
 #include <SPI.h>
 
 class ADS1120
@@ -216,5 +213,3 @@ class ADS1120
         Registers _readReg(uint8_t addr);
         bool _readData(uint16_t& data, unsigned timeout=5e5);
 };
-
-#endif

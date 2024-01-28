@@ -14,7 +14,7 @@ void Rate::setMs(unsigned ms, bool keepStage)
     else
         newInverseRate = ms * 1000;
     
-    start = sysMicros();
+    start = sysTime();
     if (keepStage)
     {
         uint64_t offset = newInverseRate * getStage();
@@ -36,7 +36,7 @@ void Rate::setHertz(float hertz, bool keepStage)
     else
         newInverseRate = 1e6 / hertz;
     
-    start = sysMicros();
+    start = sysTime();
     if (keepStage)
     {
         uint64_t offset = newInverseRate * getStage();
@@ -52,13 +52,13 @@ void Rate::setHertz(float hertz, bool keepStage)
 
 void Rate::reset()
 {
-    start = sysMicros();
+    start = sysTime();
     last = start;
 }
 
 bool Rate::isReady()
 {
-    uint64_t time = sysMicros();
+    uint64_t time = sysTime();
     if (time > inverseRate + last)
     {
         last = time - (time - last) % inverseRate;
@@ -69,20 +69,20 @@ bool Rate::isReady()
 
 void Rate::sleep()
 {
-    sysSleep((inverseRate - (micros() - start) % inverseRate) / (unsigned) 1e3);
+    sysSleep((inverseRate - (sysTime() - start) % inverseRate) / (unsigned) 1e3);
 }
 
 float Rate::getStage()
 {
-    return ((sysMicros() - last) % inverseRate) / (float) inverseRate;
+    return ((sysTime() - last) % inverseRate) / (float) inverseRate;
 }
 
 float Rate::getStageSin(float offset)
 {
-    return (fsin((getStage() + offset) * 2 * fPI) + 1) / 2.0f;
+    return (sin((getStage() + offset) * 2 * PI) + 1) / 2.0f;
 }
 
 float Rate::getStageCos(float offset)
 {
-    return (fcos((getStage() + offset) * 2 * fPI) + 1) / 2.0f;
+    return (cos((getStage() + offset) * 2 * PI) + 1) / 2.0f;
 }

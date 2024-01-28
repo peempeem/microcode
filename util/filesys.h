@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <string.h>
 #include <vector>
 
 class FileSys
@@ -9,19 +10,23 @@ class FileSys
         class FileData
         {
             public:
-                FileData(char* name, unsigned size);
-                FileData(const char* name, unsigned size);
-                FileData(const FileData& other);
-                ~FileData();
+                FileData(char* name, unsigned size) : _size(size) { _init((const char*) name); }
+                FileData(const char* name, unsigned size) : _size(size) { _init(name); }
+                FileData(const FileData& other) : _size(other._size) { _init((const char*) other._name); }
+                ~FileData() { delete[] _name; };
                 
-                const char* name();
-                unsigned size();
+                const char* name() { return _name; }
+                unsigned size() { return _size; }
 
             private:
                 char* _name;
                 unsigned _size;
 
-                void init(const char* name);
+                void _init(const char* name)
+                {
+                    _name = new char[strlen(name) + 1];
+                    strcpy(_name, name);
+                }
         };
 
         bool init(bool format=true);

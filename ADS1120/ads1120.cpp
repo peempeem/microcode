@@ -1,18 +1,11 @@
 #include "ads1120.h"
 
-#if __has_include(<SPI.h>)
-
 #define CMD_POWER_DOWN      0x03
 #define CMD_RESET           0x07
 #define CMD_START_SYNC      0x08
 #define CMD_READ_DATA       0x1F
 #define CMD_READ_REG        0x20
 #define CMD_WRITE_REG       0x40
-
-#define REG0_ADDR           0x00
-#define REG1_ADDR           0x01
-#define REG2_ADDR           0x02
-#define REG3_ADDR           0x03
 
 ADS1120::ADS1120(SPIClass* spi, unsigned cs, unsigned drdy, unsigned clkspeed) : _spi(spi), _cs(cs), _drdy(drdy), _clkspeed(clkspeed)
 {
@@ -21,21 +14,21 @@ ADS1120::ADS1120(SPIClass* spi, unsigned cs, unsigned drdy, unsigned clkspeed) :
 
 bool ADS1120::begin()
 {
-    sysPinMode(_cs, OUTPUT);
-    sysPinMode(_drdy, INPUT);
+    pinMode(_cs, OUTPUT);
+    pinMode(_drdy, INPUT);
 
     reset();
     _sendCommand(CMD_START_SYNC);
 
-    Registers reg = _readReg(REG0_ADDR);
+    Registers reg = _readReg(0);
     reg.reg0.gain_config = Gain128;
-    _writeReg(REG0_ADDR, reg);
-    reg = _readReg(REG0_ADDR);
+    _writeReg(0, reg);
+    reg = _readReg(0);
 
     if (reg.reg0.gain_config == Gain128)
     {
         reg.reg0.gain_config = Gain1;
-        _writeReg(REG0_ADDR, reg);
+        _writeReg(0, reg);
         return true;
     }
 
@@ -79,9 +72,9 @@ void ADS1120::setMux(unsigned mux)
 {
     if (mux <= APWR4_MON)
     {
-        Registers reg = _readReg(REG0_ADDR);
+        Registers reg = _readReg(0);
         reg.reg0.mux_config = mux;
-        _writeReg(REG0_ADDR, reg);
+        _writeReg(0, reg);
     }
 }
 
@@ -89,18 +82,18 @@ void ADS1120::setGain(unsigned gain)
 {
     if (gain <= Gain128)
     {
-        Registers reg = _readReg(REG0_ADDR);
+        Registers reg = _readReg(0);
         reg.reg0.gain_config = gain;
-        _writeReg(REG0_ADDR, reg);
+        _writeReg(0, reg);
         _gain = 1 << gain;
     }
 }
 
 void ADS1120::setPGABypass(bool bypass)
 {
-    Registers reg = _readReg(REG0_ADDR);
+    Registers reg = _readReg(0);
     reg.reg0.pga_bypass = bypass;
-    _writeReg(REG0_ADDR, reg);
+    _writeReg(0, reg);
 }
 
 void ADS1120::setDataRate(unsigned rate)
@@ -125,9 +118,9 @@ void ADS1120::setDataRate(unsigned rate)
     else
         return;
     
-    Registers reg = _readReg(REG1_ADDR);
+    Registers reg = _readReg(1);
     reg.reg1.data_rate = rate;
-    _writeReg(REG1_ADDR, reg);
+    _writeReg(1, reg);
 }
 
 void ADS1120::setOpMode(unsigned mode)
@@ -135,9 +128,9 @@ void ADS1120::setOpMode(unsigned mode)
     if (mode <= TurboMode)
     {
         _mode = mode;
-        Registers reg = _readReg(REG1_ADDR);
+        Registers reg = _readReg(1);
         reg.reg1.operating_mode = mode;
-        _writeReg(REG1_ADDR, reg);
+        _writeReg(1, reg);
     }
 }
 
@@ -146,9 +139,9 @@ void ADS1120::setConversionMode(unsigned mode)
     if (mode <= Continuous)
     {
         _cmode = mode;
-        Registers reg = _readReg(REG1_ADDR);
+        Registers reg = _readReg(1);
         reg.reg1.conversion_mode = mode;
-        _writeReg(REG1_ADDR, reg);
+        _writeReg(1, reg);
 
         if (mode == Continuous)
             _sendCommand(CMD_START_SYNC);
@@ -159,26 +152,26 @@ void ADS1120::setTemperatureMode(unsigned mode)
 {
     if (mode <= EnableTemp)
     {
-        Registers reg = _readReg(REG1_ADDR);
+        Registers reg = _readReg(1);
         reg.reg1.temperature_sensor_mode = mode;
-        _writeReg(REG1_ADDR, reg);
+        _writeReg(1, reg);
     }
 }
 
 void ADS1120::setBurnoutCurrentSources(bool enabled)
 {
-    Registers reg = _readReg(REG1_ADDR);
+    Registers reg = _readReg(1);
     reg.reg1.burnout_current_sources = enabled;
-    _writeReg(REG1_ADDR, reg);
+    _writeReg(1, reg);
 }
 
 void ADS1120::setVoltageRef(unsigned ref)
 {
     if (ref <= AnalogSupply)
     {
-        Registers reg = _readReg(REG2_ADDR);
+        Registers reg = _readReg(2);
         reg.reg2.voltage_reference_selection = ref;
-        _writeReg(REG2_ADDR, reg);
+        _writeReg(2, reg);
     }
 }
 
@@ -186,9 +179,9 @@ void ADS1120::setFIR(unsigned filter)
 {
     if (filter <= Filter60Hz)
     {
-        Registers reg = _readReg(REG2_ADDR);
+        Registers reg = _readReg(2);
         reg.reg2.fir_filter_config = filter;
-        _writeReg(REG2_ADDR, reg);
+        _writeReg(2, reg);
     }
 }
 
@@ -196,9 +189,9 @@ void ADS1120::setPowerSwitch(unsigned mode)
 {
     if (mode <= Automatic)
     {
-        Registers reg = _readReg(REG2_ADDR);
+        Registers reg = _readReg(2);
         reg.reg2.power_switch_config = mode;
-        _writeReg(REG2_ADDR, reg);
+        _writeReg(2, reg);
     }
 }
 
@@ -206,9 +199,9 @@ void ADS1120::setIDACCurrent(unsigned current)
 {
     if (current <= IDAC_1500uA)
     {
-        Registers reg = _readReg(REG2_ADDR);
+        Registers reg = _readReg(2);
         reg.reg2.idac_current_setting = current;
-        _writeReg(REG2_ADDR, reg);
+        _writeReg(2, reg);
     }
 }
 
@@ -216,9 +209,9 @@ void ADS1120::setIDAC1Routing(unsigned routing)
 {
     if (routing <= IDAC_REFN0)
     {
-        Registers reg = _readReg(REG3_ADDR);
+        Registers reg = _readReg(3);
         reg.reg3.idac1_routing_config = routing;
-        _writeReg(REG3_ADDR, reg);
+        _writeReg(3, reg);
     }
 }
 
@@ -226,9 +219,9 @@ void ADS1120::setIDAC2Routing(unsigned routing)
 {
     if (routing <= IDAC_REFN0)
     {
-        Registers reg = _readReg(REG3_ADDR);
+        Registers reg = _readReg(3);
         reg.reg3.idac2_routing_config = routing;
-        _writeReg(REG3_ADDR, reg);
+        _writeReg(3, reg);
     }
 }
 
@@ -236,38 +229,38 @@ void ADS1120::setDRDYMode(unsigned mode)
 {
     if (mode <= DOUT_DRDY)
     {
-        Registers reg = _readReg(REG3_ADDR);
+        Registers reg = _readReg(3);
         reg.reg3.drdy_mode = mode;
-        _writeReg(REG3_ADDR, reg);
+        _writeReg(3, reg);
     }
 }
 
 void ADS1120::_sendCommand(uint8_t cmd)
 {
     _spi->beginTransaction(SPISettings(_clkspeed, MSBFIRST, SPI_MODE1));
-    sysDigitalWrite(_cs, LOW);
+    digitalWrite(_cs, LOW);
     _spi->transfer(cmd);
-    sysDigitalWrite(_cs, HIGH);
+    digitalWrite(_cs, HIGH);
     _spi->endTransaction();
 }
 
 void ADS1120::_writeReg(uint8_t addr, Registers reg)
 {
     _spi->beginTransaction(SPISettings(_clkspeed, MSBFIRST, SPI_MODE1));
-    sysDigitalWrite(_cs, LOW);
+    digitalWrite(_cs, LOW);
     _spi->transfer(CMD_WRITE_REG | (addr << 2));
     _spi->transfer(reg.raw);
-    sysDigitalWrite(_cs, HIGH);
+    digitalWrite(_cs, HIGH);
     _spi->endTransaction();
 }
 
 ADS1120::Registers ADS1120::_readReg(uint8_t addr)
 {
     _spi->beginTransaction(SPISettings(_clkspeed, MSBFIRST, SPI_MODE1));
-    sysDigitalWrite(_cs, LOW);
+    digitalWrite(_cs, LOW);
     _spi->transfer(CMD_READ_REG | (addr << 2));
     Registers reg = _spi->transfer(0xFF);
-    sysDigitalWrite(_cs, HIGH);
+    digitalWrite(_cs, HIGH);
     _spi->endTransaction();
     return reg;
 }
@@ -275,17 +268,17 @@ ADS1120::Registers ADS1120::_readReg(uint8_t addr)
 bool ADS1120::_readData(uint16_t& data, unsigned timeout)
 {
     _spi->beginTransaction(SPISettings(_clkspeed, MSBFIRST, SPI_MODE1));
-    sysDigitalWrite(_cs, LOW);
+    digitalWrite(_cs, LOW);
 
     if (_cmode == SingleShot)
         _spi->transfer(CMD_START_SYNC);
 
-    uint64_t end = sysMicros() + timeout;
-    while (sysDigitalRead(_drdy) == HIGH)
+    uint64_t end = sysTime() + timeout;
+    while (digitalRead(_drdy) == HIGH)
     {
-        if (sysMicros() >= end)
+        if (sysTime() >= end)
         {
-            sysDigitalWrite(_cs, HIGH);
+            digitalWrite(_cs, HIGH);
             _spi->endTransaction();
             return false;
         }
@@ -296,5 +289,3 @@ bool ADS1120::_readData(uint16_t& data, unsigned timeout)
     _spi->endTransaction();
     return true;
 }
-
-#endif

@@ -1,10 +1,7 @@
 #pragma once
 
 #include "color.h"
-
-#if __has_include(<TFT_eSPI.h>)
 #include <TFT_eSPI.h>
-#endif
 
 template <class T> class Point2D
 {

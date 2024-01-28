@@ -41,7 +41,7 @@ bool GUI::containsScreen(Screen* screen)
 
 void GUI::addScreen(Screen* screen)
 {
-    _screens.insert((unsigned) screen, screen);
+    _screens[(unsigned) screen] = screen;
     screen->dimensions = _dimensions;
     screen->point.set(0, notifications.dimensions.height);
 }

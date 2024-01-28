@@ -8,50 +8,37 @@ LED::LED(unsigned pin, bool inverted) : pin(pin), inverted(inverted)
 
 void LED::init()
 {
-	#ifdef sysPinMode
-    sysPinMode(pin, PinMode::output);
-	#endif
+    pinMode(pin, OUTPUT);
 }
 
-#ifdef PWM
 void LED::usePWM(PWM& pwm)
 {
-
     if (usingPWM)
-        sysDetachPin(pin);
-    sysAttachPin(pin, pwm.channel());
+        ledcDetachPin(pin);
+    ledcAttachPin(pin, pwm.channel());
     usingPWM = true;
 }
-#endif
 
 void LED::turnOn()
 {
-	#ifdef PWM
     if (usingPWM)
     {
-        sysDetachPin(pin);
+        ledcDetachPin(pin);
         usingPWM = false;
         init();
     }
-	#endif
 
-	#ifdef sysDigitalWrite
-    sysDigitalWrite(pin, inverted ? Digital::low : Digital::high);
-	#endif
+    digitalWrite(pin, inverted ? LOW : HIGH);
 }
 
 void LED::turnOff()
 {
-	#ifdef PWM
     if (usingPWM)
     {
-        sysDetachPin(pin);
+        ledcDetachPin(pin);
         usingPWM = false;
         init();
     }
-	#endif
 
-	#ifdef sysDigitalWrite
-    sysDigitalWrite(pin, inverted ? Digital::high : Digital::low);
-	#endif
+    digitalWrite(pin, inverted ? HIGH : LOW);
 }

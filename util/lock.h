@@ -2,16 +2,26 @@
 
 #include "../hal/hal.h"
 
-class Lock
+class SpinLock
 {
     public:
-        Lock();
-
-        void lock();
-        void unlock();
+        SpinLock() {}
+        void lock() { portENTER_CRITICAL_SAFE(&_spinlock); }
+        void unlock() { portEXIT_CRITICAL_SAFE(&_spinlock); }
     
     private:
-        #if __has_include(<esp.h>)
-        portMUX_TYPE spinlock;
-        #endif
+        portMUX_TYPE _spinlock = portMUX_INITIALIZER_UNLOCKED;
+};
+
+class BinarySemaphore
+{
+    public:
+        BinarySemaphore() { vSemaphoreCreateBinary(_semaphore); }
+        ~BinarySemaphore() { vSemaphoreDelete(_semaphore); }
+
+        bool lock(TickType_t timeout=portMAX_DELAY) { return xSemaphoreTake(_semaphore, timeout) == pdTRUE; }
+        void unlock() { xSemaphoreGive(_semaphore); }
+    
+    private:
+        xSemaphoreHandle _semaphore;
 };

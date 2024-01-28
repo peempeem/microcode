@@ -5,10 +5,10 @@
 #include <vector>
 #include <queue>
 
-class MessageStream : public Lock
+class MessageStream : public SpinLock
 {
     public:
-        MessageStream(uint8_t type, unsigned len, float hz) : Lock(), _type(type), _buf(len)
+        MessageStream(uint8_t type, unsigned len, float hz) : SpinLock(), _type(type), _buf(len)
         {
             _sendTimer = Timer(1000 / hz);
             _numPkts = (len + MAX_PACKET_DATA - 1) / MAX_PACKET_DATA;
@@ -16,37 +16,24 @@ class MessageStream : public Lock
                 _numPkts = 1;
         }
 
-        unsigned id()
-        {
-            return _id;
-        }
+        unsigned id() { return _id; }
 
-        bool ready()
-        {
-            return _sendTimer.isRinging();
-        }
+        bool ready() { return _sendTimer.isRinging(); }
 
-        uint8_t* get()
-        {
-            return _buf.data();
-        }
+        uint8_t* get() { return _buf.data(); }
 
-        Message send(uint16_t id)
+        Message createMessage(uint16_t id, Message& smsg)
         {
             _id = id;
             _sendTimer.reset();
             for (unsigned i = 0; i < _numPkts; i++)
-                _sendIndexes.insert(i, i);
+                _sendIndexes[i] = i;
             lock();
-            Message smsg = Message(_type, _buf.data(), _buf.size());
+            smsg = Message(_type, _buf.data(), _buf.size());
             unlock();
-            return smsg;
         }
 
-        Hash<uint8_t>& sendIndexes()
-        {
-            return _sendIndexes;
-        }
+        Hash<uint8_t>& sendIndexes() { return _sendIndexes; }
     
     private:
         uint8_t _type;

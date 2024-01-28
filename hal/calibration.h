@@ -1,6 +1,7 @@
 #pragma once
 
-#if __has_include(<esp.h>)
+#include <stdint.h>
+
 static uint16_t analogReadCalibrationValues[] = 
 {
     0,
@@ -4100,4 +4101,3 @@ static uint16_t analogReadCalibrationValues[] =
     4074,
     4096
 };
-#endif

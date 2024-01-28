@@ -8,54 +8,59 @@ SharedBuffer::SharedBuffer() : _buf(NULL), _size(0)
 
 SharedBuffer::SharedBuffer(unsigned bytes) : _size(bytes)
 {
-    create();
+    _create();
 }
 
 SharedBuffer::SharedBuffer(unsigned bytes, uint8_t initializer) : _size(bytes)
 {
-    create();
+    _create();
     for (unsigned i = 0; i < bytes; i++)
         ((SharedBufferData*) _buf)->data[i] = initializer;
 }
 
 SharedBuffer::SharedBuffer(const uint8_t* data, unsigned bytes) : _size(bytes)
 {
-    create();
+    _create();
     memcpy(this->data(), data, bytes);
 }
 
 SharedBuffer::SharedBuffer(const SharedBuffer& other)
 {
-    copy(other);
+    _copy(other);
 }
 
 SharedBuffer::~SharedBuffer()
 {
-    destroy();
+    _destroy();
 }
 
 void SharedBuffer::operator=(const SharedBuffer& other)
 {
-    destroy();
-    copy(other);
+    _destroy();
+    _copy(other);
 }
 
-unsigned SharedBuffer::users()
+unsigned SharedBuffer::users() const
 {
     ((SharedBufferData*) _buf)->users;
 }
 
-uint8_t* SharedBuffer::data()
+uint8_t* SharedBuffer::data() const
 {
     return ((SharedBufferData*) _buf)->data;
 }
 
-unsigned SharedBuffer::size()
+unsigned SharedBuffer::size() const
 {
     return _size;
 }
 
-void SharedBuffer::create()
+bool SharedBuffer::allocated() const
+{
+    return _buf != NULL;
+}
+
+void SharedBuffer::_create()
 {
     if (!_size)
     {
@@ -64,11 +69,11 @@ void SharedBuffer::create()
     }  
 
     _buf = new uint8_t[sizeof(SharedBufferData) + _size];
-    ((SharedBufferData*) _buf)->lock = Lock();
+    ((SharedBufferData*) _buf)->lock = SpinLock();
     ((SharedBufferData*) _buf)->users = 1;
 }
 
-void SharedBuffer::destroy()
+void SharedBuffer::_destroy()
 {
     if (!_buf)
         return;
@@ -80,7 +85,7 @@ void SharedBuffer::destroy()
         delete[] _buf;
 }
 
-void SharedBuffer::copy(const SharedBuffer& other)
+void SharedBuffer::_copy(const SharedBuffer& other)
 {
     _buf = other._buf;
     _size = other._size;

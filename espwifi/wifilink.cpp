@@ -1,13 +1,11 @@
 #include "wifilink.h"
 #include "../util/lock.h"
 #include "../util/log.h"
-
-#if __has_include(<WiFi.h>) && __has_include(<esp_wifi.h>) && __has_include(<esp_wifi.h>)
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <esp_now.h>
 
-const char* logHeader = "WifiLink";
+const static char* LogHeader = "WiFiLink";
 
 class RecvMsg
 {
@@ -81,7 +79,7 @@ typedef struct
     } vendor_specific_content;
 } __attribute__ ((packed)) espnow_frame_format_t;
 
-static Lock recvLock;
+static BinarySemaphore recvLock;
 static std::queue<RecvMsg> recvMsgs;
 static std::queue<int> recvRssi;
 
@@ -100,12 +98,12 @@ void randomAscii(char* buf, int len)
         buf[i] = random(65, 91);
 }
 
-WifiLink::WifiLink()
+WiFiLink::WiFiLink()
 {
 
 }
 
-bool WifiLink::init(const char* name, unsigned random)
+bool WiFiLink::init(const char* name, unsigned random)
 {
     WiFi.disconnect();
     WiFi.mode(WIFI_AP_STA);
@@ -129,23 +127,24 @@ bool WifiLink::init(const char* name, unsigned random)
     delete[] nameBuf;
 
     if (!initialized)
-        log(logHeader, "WiFi.softAP() failed");
+        Log(LogHeader) << "WiFi.softAP() failed";
 
     if (esp_now_init() != ESP_OK)
     {
-        log(logHeader, "ESP Now init failed");
+        Log(LogHeader) << "ESP Now init failed";
         initialized = false;
     }
 
     if (esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_LR) != ESP_OK)
     {
-        log(logHeader, "ESP Now set protocol failed");
+
+        Log(LogHeader) << "ESP Now set protocol failed";
         initialized = false;
     }
 
     if (esp_now_register_recv_cb(recvCallback) != ESP_OK)
     {
-        log(logHeader, "ESP Now recv callback registration failed");
+        Log(LogHeader) << "ESP Now recv callback registration failed";
         initialized = false;
     }
 
@@ -153,7 +152,7 @@ bool WifiLink::init(const char* name, unsigned random)
     return initialized;
 }
 
-void WifiLink::setClockSpeed(unsigned megahertz)
+void WiFiLink::setClockSpeed(unsigned megahertz)
 {
     if (!_initialized)
     {
@@ -184,19 +183,19 @@ void WifiLink::setClockSpeed(unsigned megahertz)
 
     if (esp_now_init() != ESP_OK)
     {
-        log(logHeader, "ESP Now init failed when changing clock speed");
+        Log(LogHeader) << "ESP Now init failed when changing clock speed";
         initialized = false;
     }
 
     if (esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_LR) != ESP_OK)
     {
-        log(logHeader, "ESP Now set protocol failed when changing clock speed");
+        Log(LogHeader) << "ESP Now set protocol failed when changing clock speed";
         initialized = false;
     }
 
     if (esp_now_register_recv_cb(recvCallback) != ESP_OK)
     {
-        log(logHeader, "ESP Now recv callback registration failed when changing clock speed");
+        Log(LogHeader) << "ESP Now recv callback registration failed when changing clock speed";
         initialized = false;
     }
 
@@ -210,7 +209,7 @@ void WifiLink::setClockSpeed(unsigned megahertz)
     delete[] peers;
 }
 
-bool WifiLink::add(MACLink& maclink)
+bool WiFiLink::add(MACLink& maclink)
 {
     if (contains(maclink))
         return false;
@@ -220,28 +219,27 @@ bool WifiLink::add(MACLink& maclink)
     MAC mac = maclink.getMAC();
     memcpy(&peer.peer_addr, mac.addr, sizeof(MAC));
     peer.channel = 1;
-    log(logHeader, "Connecting to peer with MAC [", false);
-    logc(mac.toString().c_str(), false);
-    logc("]", false);
+    Log log(LogHeader);
+    log << "Connecting to peer with MAC [" << mac.toString().c_str() << "]";
 
     if (esp_now_add_peer(&peer) != ESP_OK)
     {
-        logf();
+        log.failed();
         return false;
     }
 
-    logs();
+    log.success();
     maclinks.push_back(&maclink);
     return true;
 }
 
-bool WifiLink::contains(MACLink& maclink)
+bool WiFiLink::contains(MACLink& maclink)
 {
     std::list<MACLink*>::iterator it;
     return _get(maclink, it);
 }
 
-void WifiLink::remove(MACLink& maclink)
+void WiFiLink::remove(MACLink& maclink)
 {
     std::list<MACLink*>::iterator it;
     if (_get(maclink, it))
@@ -251,7 +249,7 @@ void WifiLink::remove(MACLink& maclink)
     }
 }
 
-void WifiLink::update()
+void WiFiLink::update()
 {
     while (true)
     {
@@ -310,7 +308,7 @@ void WifiLink::update()
     }
 }
 
-bool WifiLink::scan(const char* key)
+bool WiFiLink::scan(const char* key)
 {
     if (_scanning)
         return _scanning;
@@ -323,39 +321,39 @@ bool WifiLink::scan(const char* key)
     return _scanning;
 }
 
-bool WifiLink::isScanning()
+bool WiFiLink::isScanning()
 {
     return _scanning;
 }
 
-std::list<MAC> WifiLink::getScans()
+std::list<MAC> WiFiLink::getScans()
 {
     return scans;
 }
 
-void WifiLink::emptyScans()
+void WiFiLink::emptyScans()
 {
     scans.clear();
 }
 
-void WifiLink::setPairing(bool pairing)
+void WiFiLink::setPairing(bool pairing)
 {
     _pairing = pairing;
     if (!pairing)
         pairings.clear();
 }
 
-bool WifiLink::isPairing()
+bool WiFiLink::isPairing()
 {
     return _pairing;
 }
 
-std::list<MAC> WifiLink::getPairings()
+std::list<MAC> WiFiLink::getPairings()
 {
     return pairings;
 }
 
-bool WifiLink::_get(MAC& mac, std::list<MACLink*>::iterator& it)
+bool WiFiLink::_get(MAC& mac, std::list<MACLink*>::iterator& it)
 {
     for (it = maclinks.begin(); it != maclinks.end(); it++)
     {
@@ -365,7 +363,7 @@ bool WifiLink::_get(MAC& mac, std::list<MACLink*>::iterator& it)
     return false;
 }
 
-bool WifiLink::_get(MACLink& maclink, std::list<MACLink*>::iterator& it)
+bool WiFiLink::_get(MACLink& maclink, std::list<MACLink*>::iterator& it)
 {
     for (it = maclinks.begin(); it != maclinks.end(); it++)
     {
@@ -374,5 +372,3 @@ bool WifiLink::_get(MACLink& maclink, std::list<MACLink*>::iterator& it)
     }
     return false;
 }
-
-#endif

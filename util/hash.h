@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <list>
    
 template <class V> class Hash
 {
@@ -23,45 +22,50 @@ template <class V> class Hash
                 V& operator*();
                 Itterator& operator++();
                 Itterator operator++(int);
-                bool operator!=(const Itterator& other);
+                bool operator!=(const Itterator& other) const;
+                unsigned key() const;
+                unsigned idx() const;
             
             private:
                 unsigned _idx;
                 std::vector<Node*>* _table;
         };
 
-        Hash(float resize=0.7f);
+        Hash(unsigned minSize=-1, float minLoad=0.25f, float maxLoad=0.75f);
         Hash(const Hash& other);
         ~Hash();
 
         void operator=(const Hash& other);
 
-        void insert(unsigned key, const V& value);
-        void remove(unsigned key);
-
-        void clear();
-
         V& operator[](unsigned key);
         V* at(unsigned key);
 
-        bool contains(unsigned key);
-        unsigned size();
-        bool empty();
+        void remove(unsigned key, bool canResize=true);
+        void remove(const Itterator& it, bool canResize=false);
+        void reserve(unsigned size);
+        void shrink();
+        void clear();
 
-        std::vector<unsigned> keys();
+        bool contains(unsigned key);
+        bool empty();
+        unsigned size();
+        unsigned containerSize();
 
         Itterator begin();
         Itterator end();
 
     private:
-        std::vector<Node*> _table;
-        std::vector<bool> _probe;
+        std::vector<Node*>* _table;
+        std::vector<bool>* _probe;
+        float _minLoad;
+        float _maxLoad;
         unsigned _size;
-        float _load;
+        unsigned _minPrime;
         unsigned _prime;
 
         V& _insert(unsigned key, const V& value);
-        void _resize();
+        void _remove(unsigned idx, bool canResize=true);
+        void _realloc(unsigned newPrime);
         unsigned _contains(unsigned key);
         unsigned _hash1(unsigned key);
         unsigned _hash2(unsigned key);

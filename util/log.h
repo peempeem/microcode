@@ -1,9 +1,29 @@
 #pragma once
 
-template <class T> static void log(const char* header, T data, bool nl=true);
-template <class T> static void logc(T data, bool nl=true);
-template <class T> static void logx(T data, bool nl=true);
-static void logf();
-static void logs();
+#include "lock.h"
+#include "bytestream.h"
+#include <ostream>
+#include <sstream>
+#include <iomanip>
+#include <streambuf>
 
-#include "log.hpp"
+class Log : public std::stringstream
+{
+    public:
+        Log();
+        Log(const char* header, unsigned headerPadding=16);
+        Log(const Log& other) { (*this) << other.rdbuf(); }
+        ~Log() { flush(); }
+
+        Log& operator=(const Log& other);
+
+        Log& operator>>(ByteStream& stream);
+
+        void flush(bool nl=true);
+
+        void failed();
+        void success();
+
+    private:
+        bool _flushed;
+};

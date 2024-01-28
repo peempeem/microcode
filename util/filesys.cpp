@@ -1,45 +1,8 @@
 #include "filesys.h"
 #include "log.h"
-#include <string.h>
 #include <SPIFFS.h>
 
-const static char* logHeader = "filesys";
-
-FileSys::FileData::FileData(char* name, unsigned size) : _size(size)
-{
-    init((const char*) name);
-}
-
-FileSys::FileData::FileData(const char* name, unsigned size) : _size(size)
-{
-    init(name);
-}
-
-FileSys::FileData::FileData(const FileSys::FileData& other) : _size(other._size)
-{
-    init((const char*) other._name);
-}
-
-FileSys::FileData::~FileData()
-{
-    delete[] _name;
-}
-
-const char* FileSys::FileData::name()
-{
-    return _name;
-}
-
-void FileSys::FileData::init(const char* name)
-{
-    _name = new char[strlen(name) + 1];
-    strcpy(_name, name);
-}
-
-unsigned FileSys::FileData::size()
-{
-    return _size;
-}
+const static char* LogHeader = "filesys";
 
 bool FileSys::init(bool format) {
     return SPIFFS.begin(true, "/spiffs", 32);
@@ -51,8 +14,7 @@ bool FileSys::read(const char* path, uint8_t* buf, int size, int seek)
     if (!file) 
     {
         file.close();
-        log(logHeader, path, false);
-        logc(" does not exist");
+        Log(LogHeader) << path << " does not exist";
         return false;
     }
     
@@ -61,12 +23,7 @@ bool FileSys::read(const char* path, uint8_t* buf, int size, int seek)
     file.close();
     if (nbytes != size)
     {
-        log(logHeader, path, false);
-        logc(" read less bytes [", false);
-        logc(nbytes, false);
-        logc("] than requested [", false);
-        logc(size, false);
-        logc("]");
+        Log(LogHeader) << path << " read less bytes [" << nbytes << "] than requested [" << size << "]";
         return false;
     }
     return true;
@@ -76,21 +33,14 @@ bool FileSys::write(const char* path, uint8_t* buf, int size, int seek)
 {
     File file = SPIFFS.open(path, FILE_WRITE);
     if (!file)
-    {
-        log(logHeader, "File does not exist, creating ", false);
-        logc(path);
-    }
+        Log(LogHeader) << "File does not exist, creating " << path;
     
     file.seek(seek, SeekMode::SeekCur);
     int nbytes = file.write(buf, size);
     file.close();
     if (nbytes != size)
     {
-        log(logHeader, "Wrote less bytes [", false);
-        logc(nbytes, false);
-        logc("] than requested [", false);
-        logc(size, false);
-        logc("]");
+        Log(LogHeader) << "Wrote less bytes [" << nbytes << "] than requested [" << size << "]";
         return false;
     }
     return true;
@@ -100,12 +50,10 @@ bool FileSys::remove(const char* path)
 {
     if (SPIFFS.remove(path))
     {
-        log(logHeader, "Removed ", false);
-        logc(path);
+        Log(LogHeader) << "Removed " << path;
         return true;
     }
-    log(logHeader, "Failed to remove ", false);
-    logc(path);
+    Log(LogHeader) << "Failed to remove " << path;
     return false;
 }
 
@@ -119,7 +67,7 @@ std::vector<FileSys::FileData> FileSys::map(const char* path)
     File file = SPIFFS.open(path);
     while (file)
     {
-        files.emplace_back(file.name(), file.size());
+        files.emplace_back(file.path(), file.size());
         file.close();
         file = root.openNextFile();
     }
@@ -127,8 +75,10 @@ std::vector<FileSys::FileData> FileSys::map(const char* path)
     return files;
 }
 
-bool FileSys::clear() {
-    log(logHeader, "Clearing filesystem...");
+bool FileSys::clear()
+{
+    Log log(LogHeader);
+    log << "Clearing filesystem";
     std::vector<FileData> files = map("/");
     for (FileData& file : files)
     {
@@ -136,29 +86,28 @@ bool FileSys::clear() {
             continue;
         if (!remove(file.name()))
         {
-            log(logHeader, "Couldn't clear filesystem");
+            log.failed();
             return false;
         }       
     }
-    log(logHeader, "Cleared filesystem");
+    log.success();
     return true;
 }
 
 void FileSys::logMap(std::vector<FileSys::FileData> files)
 {
-    log(logHeader, "Enumerating files...");
-    char buf[12];
+    Log log(LogHeader);
+    log << "Enumerating files...\n";
+    log << "   Size    |    Path   \n";
+    unsigned len = 0;
     for (FileData& fd : files)
     {
-        logc("Size: ", false);
-        int len = snprintf(buf, 12, "%d", fd.size());
-        logc(buf, false);
-        int j;
-        for (j = 0; j < 11 - len; j++)
-            buf[j] = ' ';
-        buf[j] = 0;
-        logc(buf, false);
-        logc(fd.name());
+        unsigned pathLen = strlen(fd.name());
+        if (pathLen > len)
+            len = pathLen;
     }
-    log(logHeader, "Done enumerating");
+    log << std::setw(max(23, (int) len + 13) + 1) << std::setfill('=') << "\n" << std::setfill(' ');
+    for (FileData& fd : files)
+        log << std::setw(10) << fd.size() << std::setw(0) << " | " << fd.name() << "\n";
+    log.flush(false);
 }

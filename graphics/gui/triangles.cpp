@@ -22,14 +22,12 @@ Triangles::Triangles(unsigned numAgents)
             agents.back().velocity.y *= -1;
     }
 
-    lastTime = sysMicros();
+    lastTime = sysTime();
 }
-
-#include "../../util/log.h"
 
 void Triangles::draw(TFT_eSprite& sprite)
 {
-    uint64_t time = sysMicros();
+    uint64_t time = sysTime();
     float step = (time - lastTime) / (float) 1e6;
     if (step >= 1)
         step = 0;

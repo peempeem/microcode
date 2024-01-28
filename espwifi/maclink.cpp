@@ -32,7 +32,7 @@ void MACLink::send(Message& msg, uint8_t retries, unsigned stale)
     {
         _send(pkt);
         if (!pkt.isDead())
-            sentPackets.insert((((unsigned) pkt.get().id) << 16) + pkt.get().idx, pkt);
+            sentPackets[(((unsigned) pkt.get().id) << 16) + pkt.get().idx] = pkt;
     }
 }
 
@@ -51,36 +51,38 @@ void MACLink::update()
         toProcess.pop();
     }
 
-    for (unsigned key : recvMessages.keys())
+    for (auto it = recvMessages.begin(); it != recvMessages.end(); ++it)
     {
-        if (recvMessages[key].isDead())
-            recvMessages.remove(key);
+        if ((*it).isDead())
+            recvMessages.remove(it);
     }
-
-    for (unsigned key : sentPackets.keys())
+    recvMessages.shrink();
+    
+    for (auto it = sentPackets.begin(); it != sentPackets.end(); ++it)
     {
-        Packet& pkt = sentPackets[key];
-        if (pkt.isStale())
+        if ((*it).isStale())
         {
-            _send(pkt);
-            if (pkt.isDead())
-                sentPackets.remove(key);
+            _send((*it));
+            if ((*it).isDead())
+                sentPackets.remove(it);
         }
     }
+    sentPackets.shrink();
 
     for (MessageStream* mstream : mstreams)
     {
         if (mstream->ready())
         {
-            for (unsigned key : mstream->sendIndexes().keys())
+            for (auto it = mstream->sendIndexes().begin(); it != mstream->sendIndexes().end(); ++it)
             {
-                if (!sentPackets.contains((mstream->id() << 16) + key))
-                    mstream->sendIndexes().remove(key);
+                if (!sentPackets.contains((mstream->id() << 16) + (*it)))
+                    mstream->sendIndexes().remove(it);
             }
 
             if (mstream->sendIndexes().empty())
             {
-                Message smsg = mstream->send(id);
+                Message smsg;
+                mstream->createMessage(id, smsg);
                 send(smsg);
             }
         }

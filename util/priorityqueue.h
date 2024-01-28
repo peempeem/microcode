@@ -3,21 +3,32 @@
 #include "hash.h"
 #include <queue>
 
-template <class T> class PriorityQueue
+template <class T> class MinPriorityQueue
 {
     public:
-        PriorityQueue() {}
+        bool empty();
+        unsigned size();
 
-        unsigned size() { return _items.size(); }
-        void push(T& item, unsigned priority) {  _items[priority].push(item); }
+        void push(const T& item, unsigned priority);
         void pop();
-        T& front() { return _items[_nextPriority()].front(); }
 
-        unsigned _nextPriority();
+        T& top();
+        unsigned topPriority();
+
 
     private:
-        unsigned _priority = -1;
-        Hash<std::queue<T>> _items;
+        struct Item
+        {
+            Item() : item(NULL) { }
+            Item(T item, unsigned priority) : item(item), priority(priority) { }
+
+            bool operator>(const Item& other) const { return priority > other.priority; }
+
+            T item;
+            unsigned priority;
+        };
+
+        std::priority_queue<Item, std::vector<Item>, std::greater<Item>> _pq;
 };
 
 #include "priorityqueue.hpp"

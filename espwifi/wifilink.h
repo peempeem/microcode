@@ -3,11 +3,10 @@
 #include "maclink.h"
 #include <list>
 
-
-class WifiLink
+class WiFiLink
 {
     public:
-        WifiLink();
+        WiFiLink();
 
         bool init(const char* name, unsigned random=10);
 
@@ -39,4 +38,4 @@ class WifiLink
 
         bool _get(MAC& mac, std::list<MACLink*>::iterator& it);
         bool _get(MACLink& maclink, std::list<MACLink*>::iterator& it);
-};
+} static wifilink;

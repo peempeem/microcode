@@ -4,8 +4,6 @@
 #include "../../util/rate.h"
 #include "../../util/hash.h"
 
-#if __has_include(<TFT_eSPI.h>)
-
 class IconHandler
 {
     public:
@@ -48,6 +46,3 @@ class IconHandler
         bool _cycling = false;
         bool _blinking = false;
 };
-
-#endif
-

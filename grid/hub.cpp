@@ -1,257 +1,183 @@
 #include "hub.h"
-#include "../util/crypt.h"
-#include <algorithm>
-#include <sstream>
+#include "../util/log.h"
+#include <random>
 
+//
+//// GridMessageHub Class
+//
 
-bool GridMessageHub::PacketPriorityQueue::available()
-{
-    _lock.lock();
-    bool ret = _pkts.size();
-    _lock.unlock();
-    return ret;
-}
-
-void GridMessageHub::PacketPriorityQueue::emplace(uint8_t* data, unsigned len)
-{
-    _lock.lock();
-    _pkts[((GridPacket::Fields::Header*) data)->priority].emplace(data, len);
-    _lock.unlock();
-}
-
-void GridMessageHub::PacketPriorityQueue::put(GridPacket& pkt)
-{
-    _lock.lock();
-    _pkts[pkt.get().header.priority].push(pkt);
-    _lock.unlock();
-}
-
-void GridMessageHub::PacketPriorityQueue::pop()
-{
-    _lock.lock();
-    unsigned priority = _nextPriority();
-    _pkts[priority].pop();
-    if (_pkts[priority].empty())
-        _pkts.remove(priority);
-    _lock.unlock();
-    _priority = -1;
-}
-
-GridPacket& GridMessageHub::PacketPriorityQueue::front()
-{
-    _lock.lock();
-    std::queue<GridPacket>& pkts = _pkts[_nextPriority()];
-    _lock.unlock();
-    return pkts.front();
-}
-
-unsigned GridMessageHub::PacketPriorityQueue::_nextPriority()
-{
-    if (_priority != (unsigned) -1)
-        return _priority;
-    
-    std::vector<unsigned> priorities = _pkts.keys();
-    _priority = *std::max_element(priorities.begin(), priorities.end());
-}
-
-void GridMessageHub::PacketTranslator::insert(uint8_t byte)
-{
-    GridPacket::Fields::Header* header = (GridPacket::Fields::Header*) _pbuf.header.data;
-
-    if (!foundHead)
-    {
-        _pbuf.header.insert(byte);
-        if (header->hhash == hash32(_pbuf.header.data, HEADER_DATA_SIZE))
-        {
-            if (!header->len)
-            {
-                lock();
-                packets.emplace((uint8_t*) &_pbuf.header, sizeof(GridPacket::Fields::Header) + header->len);
-                unlock();
-            }
-            else
-            {
-                foundHead = true;
-                idx = 0;
-            }
-        }
-    }
-    else
-    {
-        _pbuf.data[idx++] = byte;
-        if (idx >= header->len || idx >= MAX_PACKET_DATA)
-        {
-            if (header->dhash == hash32(_pbuf.data, idx))
-            {
-                lock();
-                packets.emplace((uint8_t*) &_pbuf.header, sizeof(GridPacket::Fields::Header) + header->len);
-                unlock();
-            }
-            foundHead = false;
-        }
-    }
-}
-
-GridMessageHub::NetworkTable::NetworkTable(unsigned expire) : _expire(expire)
-{
-
-}
-
-GridMessageHub::NetworkTable::NetworkTable(const uint8_t* data, unsigned expire) : _expire(expire)
-{
-    uint64_t time = sysMicros();
-
-    unsigned len = ((ListHeader*) data)->len;
-    unsigned idx = sizeof(ListHeader);
-    for (unsigned i = 0; i < len; i++)
-    {
-        NodeBytes* node = (NodeBytes*) (data + idx);
-        Node& n = nodes[node->id];
-        n.arrival = time;
-        n.id = node->id;
-        n.distance = node->distance;
-        n.connections = std::vector<uint16_t>(node->len);
-        for (unsigned j = 0; j < node->len; j++)
-            n.connections[j] = node->connections[j];
-        idx += sizeof(NodeBytes) + node->len * sizeof(uint16_t);
-    }
-
-    /*len = ((ListHeader*) (data + idx))->len;
-    idx += sizeof(ListHeader);
-    for (unsigned i = 0; i < len; i++)
-    {
-        DeathNote* deathNote = (DeathNote*) (data + idx);
-        deathNotes.insert(deathNote->victim, *deathNote);
-    }*/
-}
-
-void GridMessageHub::NetworkTable::update(uint16_t id)
-{
-    uint64_t time = sysMicros();
-
-    /*for (unsigned key : nodes.keys())
-    {
-        if (time >= nodes[key].arrival + _expire * 1000)
-        {
-            DeathNote& deathNote = deathNotes[key];
-            deathNote.victim = key;
-            deathNote.expire = _expire;
-        }
-    }
-
-    for (unsigned key : deathNotes.keys())
-    {
-        nodes.remove(key);
-        
-        DeathNote& deathNote = deathNotes[key];
-        uint64_t dt = (time - deathNote.arrival) / 1000;
-        if (dt >= deathNote.expire)
-            deathNotes.remove(key);
-        else
-            deathNote.expire -= dt;
-    }*/
-}
-
-SharedBuffer GridMessageHub::NetworkTable::serialize()
-{
-    unsigned len = sizeof(ListHeader);
-    for (Node& node : nodes)
-        len += sizeof(NodeBytes) + node.connections.size() * sizeof(uint16_t);
-    len += sizeof(ListHeader) + sizeof(DeathNoteBytes) * deathNotes.size();
-    
-    SharedBuffer buf(len);
-
-    ((ListHeader*) buf.data())->len = nodes.size();
-    unsigned idx = sizeof(ListHeader);
-    for (Node& node : nodes)
-    {
-        NodeBytes* n = (NodeBytes*) (buf.data() + idx);
-        n->timestamp = node.timestamp;
-        n->id = node.id;
-        n->distance = node.distance;
-        n->len = node.connections.size();
-        for (unsigned i = 0; i < node.connections.size(); i++)
-            n->connections[i] = node.connections[i];
-        idx += sizeof(NodeBytes) + node.connections.size() * sizeof(uint16_t);
-    }
-
-    /*((ListHeader*) buf.data() + idx)->len = nodes.size();
-    idx += sizeof(ListHeader);
-    for (DeadNode& deadNode : deadNodes)
-    {
-        *((DeadNode*) (buf.data() + idx)) = deadNode;
-        idx += sizeof(DeadNode);
-    }*/
-    
-    return buf;
-}
-
-std::string GridMessageHub::NetworkTable::toString()
-{
-    std::stringstream ss;
-    ss << "Network Table Breakdown:\n";
-    ss << "------------------------\n";
-
-    for (Node& node : nodes)
-    {
-        ss << "| Node " << node.id << ":\n";
-        //ss << "| Last Update: " << node.timestamp - node.lastUpdate << "\n";
-        ss << "| Distance: " << (unsigned) node.distance << "\n";
-        ss << "| Connections:";
-        /*for (NetworkTable::NodeConnection& conn : node.connections)
-            ss << " (" << conn.id << ")";*/
-        ss << "\n\n";
-    }
-    ss << "------------------------\n";
-    return ss.str();
-}
-
-GridMessageHub::GridMessageHub(unsigned numIO, float netTableSend, unsigned nodeTimeout) : _netTableSend(netTableSend), _nodeTimeout(nodeTimeout)
+GridMessageHub::GridMessageHub(unsigned numIO, unsigned broadcast) : _broadcast(broadcast), _msgID(0)
 {
     _ios = std::vector<IO>(numIO);
-    _netMsgs = std::vector<Hash<GridMessage>>(numIO);
-    srand(sysMicros());
-    _id = rand();
-    NetworkTable::Node& node = _netTable.nodes[_id];
-    node.timestamp = sysMicros();
-    node.id = _id;
+    _last = sysTime();
+    srand(_last);
+    _newID();
+}
+
+GridMessageHub::IO& GridMessageHub::operator[](unsigned io)
+{
+    return _ios[io];
+}
+
+void GridMessageHub::setLinkSpeed(unsigned branch, unsigned speed)
+{
+    _node.connections[branch].linkspeed = speed;
 }
 
 void GridMessageHub::update()
 {
-    // std::vector<unsigned> ios(_ios.size());
-    // for (unsigned i = 0; i < _ios.size(); i++)
-    //     ios[i] = i;
-    // std::shuffle(ios.begin(), ios.end(), _rng);
-
-    // PacketPriorityQueue packets;
-
-    // for (unsigned i : ios)
-    // {
-    //     _ios[i].in.lock();
-    //     while (true)
-    //     {
-    //         GridPacket& pkt = _ios[i].in.packets.front();
-    //         if (pkt.get().header.type == NETWORK_TABLE)
-    //             _netMsgs[i][pkt.get().header.id].insert(pkt);
-    //         else
-    //             packets.put(_ios[i].in.packets.front());
-    //         _ios[i].in.packets.pop();
-    //     }
-    //     _ios[i].in.unlock();
-    // }
-
-    //_netTable.update();
-
+    for (unsigned i = 0; i < _ios.size(); ++i)
     {
-        NetworkTable::Node& node = _netTable.nodes[_id];
-        node.timestamp = sysMicros();
-        //node.lastUpdate = node.timestamp;
+        _ios[i].in.lock();
+        if (!_ios[i].in.empty())
+        {
+            GridPacket pkt = _ios[i].in.top();
+            _ios[i].in.pop();
+            _ios[i].in.unlock();
+
+            if (_inbound[pkt.get().sender].filter.contains((((unsigned) pkt.get().id) << 16) + pkt.get().idx))
+                continue;
+            
+            if (pkt.get().receiver == _id || pkt.get().receiver == (uint16_t) -1)
+            {
+                InboundData::MessageStore& ms = _inbound[pkt.get().sender].store[pkt.get().id];
+                ms.msg.insert(pkt);
+                ms.branch = i;
+            }
+            else
+            {
+                // find out where to send if not current id
+            }
+        }
+        else
+            _ios[i].in.unlock();
     }
 
+    for (auto inIT = _inbound.begin(); inIT != _inbound.end(); ++inIT)
+    {
+        for (auto storeIT = (*inIT).store.begin(); storeIT != (*inIT).store.end(); ++storeIT)
+        {
+            if ((*storeIT).msg.received())
+            {
+                if ((*storeIT).msg.type() >= (int) NetworkMessages::Size)
+                {
+                    messages.push((*storeIT).msg, (*storeIT).msg.priority());
+                    continue;
+                }
 
+                switch ((*storeIT).msg.type())
+                {
+                    case (int) NetworkMessages::Table:
+                    {
+                        _node.connections[(*storeIT).branch].node = *((uint16_t*) (*storeIT).msg.data());
+                        NetworkTable table((*storeIT).msg.data() + sizeof(uint16_t));
+                        _table.merge(table);
+                        if (_node.connections[(*storeIT).branch].node == _id)
+                        {
+                            _kill(_id);
+                            _newID();
+                        }
+                        break;
+                    }
 
-    if (_netTableSend.isReady())
-        Serial.println(_netTable.toString().c_str());
+                    case (int) NetworkMessages::DeathNote:
+                    {
+                        uint16_t* id = (uint16_t*) (*storeIT).msg.data();
+                        if (!_graveyard.contains(*id))
+                            _kill(*((uint16_t*) (*storeIT).msg.data()));
+                        break;
+                    }
+                };
+
+                (*inIT).store.remove(storeIT);
+            }
+            else if ((*storeIT).msg.isDead())
+                (*inIT).store.remove(storeIT);
+        }
+        (*inIT).store.shrink();
+
+        (*inIT).filter.preen();
+        if ((*inIT).filter.size() == 0 && (*inIT).store.size() == 0)
+            _inbound.remove(inIT);
+    }
+    _inbound.shrink();
+
+    _node.arrival = sysTime();
+    _node.data.time = _node.arrival;
+
+    for (auto it = _node.connections.begin(); it != _node.connections.end(); ++it)
+    {
+        if ((*it).linkspeed != (unsigned) -1)
+        {
+            unsigned du = (*it).linkspeed * (_node.arrival - _last) / (float) 1e6;
+            (*it).usage = (du >= (*it).usage) ? 0 : (*it).usage - du;
+        }
+    }
+
+    _last = _node.arrival;
+    _table.nodes[_id] = _node;
+
+    _table.update();
+    _graveyard.preen();
+    
+    for (auto it = _table.nodes.begin(); it != _table.nodes.end(); ++it)
+    {
+        if (_graveyard.contains(it.key(), false))
+            _table.nodes.remove(it);
+    }
+    _table.nodes.shrink();
+    
+    if (_broadcast.isRinging())
+    {
+        GridMessage msg((int) NetworkMessages::Table, -1, sizeof(uint16_t) + _table.serialSize());
+        *((uint16_t*) msg.data()) = _id;
+        _table.serialize(msg.data() + sizeof(uint16_t));
+
+        for (unsigned i = 0; i < _ios.size(); ++i)
+            _sendBranch(msg, i, -1, 0);
         
+        _graph.representTable(_table);
+        _broadcast.reset();
+    }
+}
+
+void GridMessageHub::_newID()
+{
+    do
+        _id = rand();
+    while (_id == (uint16_t) -1 || _table.nodes.contains(_id) || _graveyard.contains(_id));
+
+    _node.arrival = sysTime();
+    _node.data.time = _node.arrival;
+    _table.nodes[_id] = _node;
+}
+
+void GridMessageHub::_kill(unsigned id)
+{
+    _graveyard.contains(id);
+    GridMessage msg((int) NetworkMessages::DeathNote, -1, sizeof(uint16_t));
+    *((uint16_t*) msg.data()) = id;
+    
+    for (unsigned i = 0; i < _ios.size(); ++i)
+        _sendBranch(msg, i, -1, 0);
+}
+
+void GridMessageHub::_sendBranch(GridMessage& msg, unsigned branch, unsigned receiver, unsigned retries)
+{
+    std::vector<GridPacket> packets;
+    msg.package(packets, _id, receiver, _msgID++, retries);
+
+    unsigned bytes = 0;
+    _ios[branch].out.lock();
+    for (GridPacket& pkt : packets)
+    {
+        _ios[branch].out.push(pkt);
+        bytes += pkt.size();
+    }   
+    _ios[branch].out.unlock();
+
+    _bytes += bytes;
+
+    if (_node.connections[branch].linkspeed != (unsigned) -1)
+        _node.connections[branch].usage += bytes;
 }

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../util/sharedbuf.h"
+#include "../util/fifo.h"
 #include "../util/priorityqueue.h"
-#include "../util/buf.h"
 
 class USBMessageBroker
 {
@@ -27,37 +27,37 @@ class USBMessageBroker
                 Message(uint8_t type, uint8_t priority, const uint8_t* data, uint16_t len);
                 Message(Fields::Header& header);
 
-                uint8_t type() { return ((Fields*) _buf.data())->header.type; }
-                uint8_t priority() { return ((Fields*) _buf.data())->header.priority; }
+                bool operator<(const Message& other) const { return priority() < other.priority(); }
 
-                uint8_t* raw() { return _buf.data(); };
-                unsigned size() { return _buf.size(); }
+                uint8_t type() const { return ((Fields*) _buf.data())->header.type; }
+                uint8_t priority() const { return ((Fields*) _buf.data())->header.priority; }
 
-                uint8_t* data() { return ((Fields*) _buf.data())->data; }
-                unsigned dataSize() { return ((Fields*) _buf.data())->header.len; };
+                uint8_t* raw() const { return _buf.data(); };
+                unsigned size() const { return _buf.size(); }
+
+                uint8_t* data() const { return ((Fields*) _buf.data())->data; }
+                unsigned dataSize() const { return ((Fields*) _buf.data())->header.len; };
 
             private:
                 SharedBuffer _buf;
         };
 
-        PriorityQueue<Message> messages;
+        MinPriorityQueue<Message> messages;
 
-        USBMessageBroker(unsigned port) : _port(port) {}
-
-        void begin(unsigned baudrate, int rx=-1, int tx=-1);
+        USBMessageBroker(HardwareSerial* serial) : _serial(serial) {}
 
         void send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len);
         void update();
     
     private:
-        unsigned _port;
-        FIFOBuffer<sizeof(Message::Fields::Header)> _buf;
+        HardwareSerial* _serial;
+        InPlaceFIFOBuffer<sizeof(Message::Fields::Header)> _buf;
         Message _rmsg;
         bool _foundHead = false;
         unsigned _idx;
 
-        PriorityQueue<Message> _smsgs;
-        PriorityQueue<Message> _rmsgs;
+        MinPriorityQueue<Message> _smsgs;
+        MinPriorityQueue<Message> _rmsgs;
 
         void _send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len);
 };

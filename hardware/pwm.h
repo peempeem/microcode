@@ -2,8 +2,6 @@
 
 #include "../util/rate.h"
 
-#if defined sysConfigurePWM && defined sysAttachPin && defined sysDetachPin && defined sysPWMrite
-
 class PWM
 {
     public:
@@ -25,5 +23,3 @@ class PWM
         unsigned _resolution;
         Rate ramp;
 };
-
-#endif

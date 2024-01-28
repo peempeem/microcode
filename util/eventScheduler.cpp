@@ -19,12 +19,12 @@ void EventScheduler::schedule(unsigned event, unsigned ms, bool overwrite)
 
 void EventScheduler::update()
 {
-    for (unsigned event : _trackedEvents.keys())
+    for (auto it = _trackedEvents.begin(); it != _trackedEvents.end(); ++it)
     {
-        if (_trackedEvents[event].isRinging())
+        if ((*it).isRinging())
         {
-            _trackedEvents.remove(event);
-            currentEvents.push(event);
+            _trackedEvents.remove(it.key());
+            currentEvents.push(it.key());
         }
     }
 }

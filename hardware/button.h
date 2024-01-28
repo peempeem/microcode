@@ -4,9 +4,7 @@
 #include "../util/lock.h"
 #include <queue>
 
-#if defined sysPinMode && defined sysDigitalRead
-
-class Button : private Lock
+class Button : private BinarySemaphore
 {
     public:
         struct TapEvent
@@ -46,5 +44,3 @@ class Button : private Lock
         Timer debounce;
         Timer multitap;
 };
-
-#endif

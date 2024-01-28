@@ -27,11 +27,6 @@ USBMessageBroker::Message::Message(Fields::Header& header)
     ((Fields*) _buf.data())->header = header;
 }
 
-void USBMessageBroker::begin(unsigned baudrate, int rx, int tx)
-{
-    sysSerialInit(_port, baudrate, rx, tx);
-}
-
 void USBMessageBroker::send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len)
 {
     _send(type + sizeof(ReservedTypes), priority + 1, data, len);
@@ -39,9 +34,9 @@ void USBMessageBroker::send(uint8_t type, uint8_t priority, uint8_t* data, uint1
 
 void USBMessageBroker::update()
 {
-    while (sysSerialAvailable(_port))
+    while (_serial->available())
     {
-        uint8_t byte = sysSerialRead(_port);
+        uint8_t byte = _serial->read();
         if (!_foundHead)
         {
             _buf.insert(byte);
@@ -85,11 +80,10 @@ void USBMessageBroker::update()
 
     while (_rmsgs.size())
     {
-        Message& msg = _rmsgs.front();
-        switch (msg.type())
+        switch (_rmsgs.top().type())
         {
             case ReservedTypes::ping:
-                _send(ReservedTypes::reping, msg.priority(), msg.data(), msg.dataSize());
+                _send(ReservedTypes::reping, _rmsgs.topPriority(), _rmsgs.top().data(), _rmsgs.top().dataSize());
                 break;
             
             default:
@@ -100,7 +94,7 @@ void USBMessageBroker::update()
 
     while (_smsgs.size())
     {
-        sysSerialWrite(_port, _smsgs.front().raw(), _smsgs.front().size());
+        _serial->write(_smsgs.top().raw(), _smsgs.top().size());
         _smsgs.pop();
     }
 }

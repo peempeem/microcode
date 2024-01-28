@@ -1,8 +1,6 @@
 #include "pwm.h"
 #include "../hal/hal.h"
 
-#if defined sysConfigurePWM && defined sysAttachPin && defined sysDetachPin && defined sysPWMrite
-
 PWM::PWM() : defaultConstructor(true)
 {
 
@@ -16,7 +14,7 @@ PWM::PWM(unsigned channel, unsigned frequency, unsigned resolution) : _channel(c
 void PWM::init()
 {
     if (!defaultConstructor)
-        sysConfigurePWM(_channel, _frequency, _resolution);
+        ledcSetup(_channel, _frequency, _resolution);
 }
 
 void PWM::write(float duty)
@@ -26,7 +24,7 @@ void PWM::write(float duty)
     else if (duty > 1)
         duty = 1;
     
-    sysPWMWrite(_channel, (1 << (_resolution - 1)) * duty);
+    ledcWrite(_channel, (1 << (_resolution - 1)) * duty);
 }
 
 unsigned PWM::channel()
@@ -43,5 +41,3 @@ unsigned PWM::resolution()
 {
     return _resolution;
 }
-
-#endif

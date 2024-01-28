@@ -30,7 +30,7 @@ void ScreenTransitioner::draw(TFT_eSprite& sprite)
     if (_timer.isRinging())
         _transitioning = false;
     
-    float stage = fsin(_timer.getStage() * fPI / 2.0f);
+    float stage = sin(_timer.getStage() * PI / 2.0f);
 
     if (_screen2 != NULL)
     {

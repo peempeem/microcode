@@ -14,14 +14,14 @@ void Timer::set(unsigned ms)
 
 void Timer::reset()
 {
-    start = sysMillis();
+    start = millis();
     end = start + ms;
     silenced = false;
 }
 
 void Timer::ring()
 {
-    end = sysMillis();
+    end = millis();
     silenced = false;
 }
 
@@ -32,14 +32,14 @@ void Timer::silence()
 
 bool Timer::isRinging()
 {
-    return !silenced && sysMillis() >= end;
+    return !silenced && millis() >= end;
 }
 
 float Timer::getStage()
 {
     if (!ms)
         return 1;
-    float stage = (sysMillis() - start) / (float) ms;
+    float stage = (millis() - start) / (float) ms;
     if (stage > 1)
         stage = 1;
     return stage;
@@ -47,10 +47,10 @@ float Timer::getStage()
 
 float Timer::getStageSin()
 {
-    return (fsin(getStage() * 2 * fPI) + 1) / 2.0f;
+    return (sin(getStage() * 2 * PI) + 1) / 2.0f;
 }
 
 float Timer::getStageCos()
 {
-    return (fcos(getStage() * 2 * fPI) + 1) / 2.0f;
+    return (cos(getStage() * 2 * PI) + 1) / 2.0f;
 }

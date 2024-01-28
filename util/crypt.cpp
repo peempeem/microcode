@@ -5,22 +5,13 @@
 
 unsigned hash32(const uint8_t* data, unsigned len)
 {
-    union
-    {
-        struct   
-        {
-            uint8_t zero;
-            uint8_t one;
-            uint8_t two;
-            uint8_t three;
-        } bytes;
-        unsigned value = FNVOB;   
-    } hash;
+    uint8_t value[4];
+    *((uint32_t*) value) = FNVOB;
     
-    for (unsigned i = 0; i < len; i++)
+    for (unsigned i = 0; i < len; ++i)
     {
-        hash.value *= FNVP;
-        hash.bytes.zero ^= data[i];
+        *((uint32_t*) value) *= FNVP;
+        value[0] ^= data[i];
     }
-    return hash.value;
+    return *((uint32_t*) value);
 }

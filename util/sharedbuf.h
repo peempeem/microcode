@@ -16,16 +16,16 @@ class SharedBuffer
 
         void operator=(const SharedBuffer& other);
 
-        unsigned users();
-        uint8_t* data();
-        unsigned size();
+        unsigned users() const;
+        uint8_t* data() const;
+        unsigned size() const;
 
-        bool allocated() { return _buf != NULL; }
+        bool allocated() const;
 
     private:
         struct SharedBufferData
         {
-            Lock lock;
+            SpinLock lock;
             unsigned users;
             uint8_t data[];
         };
@@ -33,7 +33,7 @@ class SharedBuffer
         uint8_t* _buf;
         unsigned _size;
 
-        void create();
-        void destroy();
-        void copy(const SharedBuffer& other);
+        void _create();
+        void _destroy();
+        void _copy(const SharedBuffer& other);
 };

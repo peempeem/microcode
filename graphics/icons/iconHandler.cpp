@@ -1,7 +1,5 @@
 #include "iconHandler.h"
 
-#if __has_include(<TFT_eSPI.h>)
-
 IconHandler::IconHandler()
 {
 
@@ -174,5 +172,3 @@ void IconHandler::draw(TFT_eSprite& sprite)
         }
     }
 }
-
-#endif
