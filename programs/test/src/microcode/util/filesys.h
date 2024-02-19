@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <string>
 #include <string.h>
 #include <vector>
 
@@ -33,7 +34,7 @@ class FileSys
         bool read(const char* path, uint8_t* buf, int size, int seek=0);
         bool write(const char* path, uint8_t* buf, int size, int seek=0);
         bool remove(const char* path);
-        std::vector<FileData> map(const char* path);
         bool clear();
-        void logMap(std::vector<FileData> files);
+        std::vector<FileData> map(const char* path);
+        std::string toString();
 } static filesys;

@@ -9,7 +9,7 @@ from rich.console import Console
 import rich
 import math
 
-hosts = ['controller']
+hosts = ['module1', 'module2', 'module3', 'module4']
 
 class Updater:
     def __init__(self, path, host, proc=mp.Process):
@@ -81,7 +81,7 @@ class Updater:
         self._q.put({'dt': time.time() - start})
         self._q.put({'running': False})
 
-def mass_module_update(path, hosts, processes=2):
+def mass_module_update(path, hosts, processes=1):
     batches = math.ceil(len(hosts) / processes)
     processed = 0
     console = Console()
@@ -91,7 +91,7 @@ def mass_module_update(path, hosts, processes=2):
         console.log(f'[green]Starting [white]Batch [yellow]{batch + 1} [white]/ [yellow]{batches} [white]...')
 
         num_hosts = min(len(hosts) - processed, processes)
-        updaters = [Updater(f'./{file}', host) for host in hosts[processed:processed + num_hosts]]
+        updaters = [Updater(path, host) for host in hosts[processed:processed + num_hosts]]
         processed += num_hosts
         done = [False for _ in updaters]
         updating = True
@@ -150,8 +150,17 @@ header = """[blue1]
 if __name__ == '__main__':
     rich.print(header)
 
-    for file in os.listdir('./'):
-        if '.ino.esp32.bin' in file:
+    f = None
+    dir = './build/esp32.esp32.esp32/'
+    for file in os.listdir(dir):
+        if '.ino.bin' in file:
+            f = os.path.abspath(f'{dir}/{file}')
             break
     
-    mass_module_update(file, hosts, 2)
+    if f is None:
+        rich.print("No BIN file found")
+        exit()
+    else:
+        rich.print(f"Uploading {f}")
+
+    mass_module_update(f, hosts, len(hosts))

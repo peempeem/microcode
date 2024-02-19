@@ -104,7 +104,7 @@ void PacketTranslator::insert(uint8_t byte)
     if (!_foundHead)
     {
         _pbuf.packet.insert(byte);
-        if (((GridPacket::Packet*) &_pbuf.packet)->hhash == hash32(_pbuf.packet.data, GRIDPACKET_HEADER_DATA_SIZE) & ((1 << GRIDPACKET_HHASH_BITS) - 1))
+        if (((GridPacket::Packet*) &_pbuf.packet)->hhash == hash32(_pbuf.packet.data, GRIDPACKET_HEADER_DATA_SIZE))
         {
             if (!((GridPacket::Packet*) &_pbuf.packet)->len)
             {
@@ -125,7 +125,7 @@ void PacketTranslator::insert(uint8_t byte)
         _pbuf.data[_idx++] = byte;
         if (_idx >= ((GridPacket::Packet*) &_pbuf.packet)->len || _idx >= MAX_GRIDPACKET_DATA)
         {
-            if (((GridPacket::Packet*) &_pbuf.packet)->dhash == hash32(_pbuf.data, _idx) & ((1 << GRIDPACKET_DHASH_BITS) - 1))
+            if (((GridPacket::Packet*) &_pbuf.packet)->dhash == hash32(_pbuf.data, _idx))
             {
                 GridPacket pkt((uint8_t*) &_pbuf.packet, sizeof(GridPacket::Packet) + ((GridPacket::Packet*) &_pbuf.packet)->len);
                 packets.lock();

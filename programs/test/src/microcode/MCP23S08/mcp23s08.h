@@ -9,7 +9,7 @@
 class MCP23S08
 {
     public:
-        MCP23S08(SPIClass* spi, unsigned cs, unsigned rst, unsigned clkspeed=1e6, unsigned addr=0);
+        MCP23S08(SPIClass* spi, unsigned cs, unsigned rst=-1, unsigned clkspeed=1e6, unsigned addr=0);
 
         bool begin();
 

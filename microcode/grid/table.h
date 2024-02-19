@@ -17,7 +17,7 @@ class NetworkTable
 
             PACK(struct Connection
             {
-                uint16_t node = -1;
+                uint16_t node = 0;
                 uint32_t linkspeed = -1;
                 uint32_t usage = 0;
             });

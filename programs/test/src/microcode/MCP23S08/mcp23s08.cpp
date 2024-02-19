@@ -8,21 +8,28 @@ MCP23S08::MCP23S08(SPIClass* spi, unsigned cs, unsigned rst, unsigned clkspeed, 
 
 bool MCP23S08::begin()
 {
-    pinMode(_rst, OUTPUT);
     pinMode(_cs, OUTPUT);
+    digitalWrite(_cs, HIGH);
 
-    digitalWrite(_rst, LOW);
-    vTaskDelay(1);
-    digitalWrite(_rst, HIGH);
-    vTaskDelay(1);
+    if (_rst != (unsigned) -1)
+    {
+        pinMode(_rst, OUTPUT);
+        digitalWrite(_rst, LOW);
+        delayMicroseconds(10);
+        digitalWrite(_rst, HIGH);
+        delayMicroseconds(10);
+    }
+    else
+    {
+        _writeReg(IODIR, 0xFF);
+        for (uint8_t i = 1; i < OLAT; i++)
+            _writeReg(i, 0x00);
+    }
 
-    _writeReg(IODIR, 0xCC);
-    if (_readReg(IODIR) != (uint8_t) 0xCC)
+    _writeReg(IPOL, 0xCC);
+    if (_readReg(IPOL) != (uint8_t) 0xCC)
         return false;
-
-    _writeReg(IODIR, 0xFF);
-    for (uint8_t i = 1; i < OLAT; i++)
-        _writeReg(i, 0x00);
+    _writeReg(IPOL, 0x00);
 
     return true;
 }
@@ -36,9 +43,13 @@ void MCP23S08::setMode(unsigned pin, unsigned mode)
             _writeReg(GPPU, _readReg(GPPU) & ~(1 << pin));
             break;
         
+        case INPUT_PULLUP:
+            _writeReg(IODIR, ~(~_readReg(IODIR) & ~(1 << pin)));
+            _writeReg(GPPU, _readReg(GPPU) & (1 << pin));
+            break;
+        
         case OUTPUT:
             _writeReg(IODIR, ~(~_readReg(IODIR) | (1 << pin)));
-            _writeReg(GPPU, _readReg(GPPU) & ~(1 << pin));
             break;
     }
 }

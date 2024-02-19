@@ -3,8 +3,6 @@
 #include "transitions.h"
 #include "notifications.h"
 
-#if __has_include(<TFT_eSPI.h>)
-
 class GUI
 {
     public:
@@ -36,5 +34,3 @@ class GUI
         Screen* _transitionScreen = NULL;
         ScreenTransitioner _transitioner;
 };
-
-#endif

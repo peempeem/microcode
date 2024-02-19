@@ -10,6 +10,7 @@
 #include "src/microcode/util/filesys.h"
 #include "src/microcode/ota/ota.h"
 #include "src/microcode/util/pvar.h"
+#include "src/microcode/grid/hub.h"
 
 #include <Adafruit_NeoPixel.h>
 #include <Adafruit_BNO08x.h>
@@ -17,14 +18,13 @@
 #include <WiFi.h>
 #include <ESPmDNS.h>
 
-
 #define MCP_CS  22
 #define MCP_RST 27
 
-#define ADC_CS  15
-#define ADC_RST 39
+#define ADC_CS      15
+#define ADC_DRDY    39
 
-#define IMU_CS  5
+#define IMU_CS 5
 #define IMU_INT 25
 #define IMU_RST 14
 
@@ -35,6 +35,9 @@
 #define TX0 33
 #define RX1 35
 #define TX1 32
+
+GridMessageHub hub(1);
+Rate hubDebug(1);
 
 uint8_t driverMap[] = { 1, 0, 3, 2, 5, 4, 7, 6 };
 
@@ -86,10 +89,9 @@ PACK(struct SetDevice
 
 SPIClass spiBus(VSPI);
 MCP23S08 mcp(&spiBus, MCP_CS, MCP_RST);
-ADS1120 adc(&spiBus, ADC_CS, ADC_RST);
+ADS1120 adc(&spiBus, ADC_CS, ADC_DRDY);
 Adafruit_BNO08x imu(IMU_RST);
 Adafruit_NeoPixel pixel(NUM_PXL, PXL_PIN, NEO_GRB + NEO_KHZ800);
-USBMessageBroker usb;
 
 Rate r(1);
 Rate g(2);
@@ -122,58 +124,74 @@ void setup()
 {
     Log("init") << "Begin initialization...";
 
-    suart0.init(500000);
+    suart0.init(115200);
     ss.init.single.debug = 1;
     Log() >> *suart0.getTXStream();
-    usb.attachStreams(suart0.getTXStream(), suart0.getRXStream());
 
-    if (!filesys.init())
-        Log("init") << "File System -> [ FAILED ]";
-    else
     {
-        ss.init.single.filesys = 1;
-        Log("init") << "File System -> [ SUCCESS ]";
+        Log log("init");
+        log << "File System";
+        if (!filesys.init())
+        {
+            log.failed();
+            while (1);
+        }
+        log.success();
     }
+
+    Log("init") << filesys.toString();
+    ss.init.single.filesys = 1;
 
     wifiData.load();
-    
     spiBus.begin();
 
-    if (!mcp.begin())
-        Log("init") << "MCP GPIO Extender -> [ FAILED ]";
-    else
     {
-        for (unsigned i = 0; i < 8; i++)
-            mcp.setMode(i, OUTPUT);
-        ss.init.single.mcp = 1;
-        Log("init") << "MCP GPIO Extender -> [ SUCCESS ]";
+        Log log("init");
+        log << "MCP GPIO Extender";
+        if (!mcp.begin())
+            log.failed();
+        else
+        {
+            for (unsigned i = 0; i < 8; i++)
+                mcp.setMode(i, OUTPUT);
+            ss.init.single.mcp = 1;
+            log.success();
+        }
+    }
+    
+    {
+        Log log("init");
+        log << "ADS1120 ADC";
+        if (!adc.begin())
+            log.failed();
+        else
+        {
+            adc.setGain(ADS1120::Gain1);
+            adc.setDataRate(ADS1120::T2000);
+            adc.setVoltageRef(ADS1120::External_REFP0_REFN0); 
+            adc.setMux(ADS1120::AIN0_AVSS);
+            adc.setConversionMode(ADS1120::Continuous);
+            ss.init.single.adc = 1;
+            log.success();
+        }
+    }
+    
+    {
+        Log log("init");
+        log << "BNO085 IMU";
+        if (!imu.begin_SPI(IMU_CS, IMU_INT, &spiBus))
+            log.failed();
+        else
+        {
+            ss.init.single.imu = 1;
+            log.success();
+        }
     }
 
-    if (!adc.begin())
-        Log("init") << "ADS1120 ADC -> [ FAILED ]";
-    else
-    {
-        adc.setGain(ADS1120::Gain1);
-        adc.setDataRate(ADS1120::T2000);
-        adc.setVoltageRef(ADS1120::External_REFP0_REFN0); 
-        adc.setMux(ADS1120::AIN0_AVSS);
-        adc.setConversionMode(ADS1120::Continuous);
-        ss.init.single.adc = 1;
-        Log("init") << "ADS1120 ADC -> [ SUCCESS ]";
-    }
-
-    if (!imu.begin_SPI(IMU_CS, IMU_INT, &spiBus))
-        Log("init") << "BNO085 IMU -> [ FAILED ]";
-    else
-    {
-        ss.init.single.imu = 1;
-        Log("init") << "BNO085 IMU -> [ SUCCESS ]";
-    }
-
+    Log("init") << "Hostname: " << wifiData.data.host;
+    Log("init") << "Network: " << wifiData.data.ssid;
+    Log("init") << "Password: " << wifiData.data.pass;
     Log("init") << "Initialization complete";
-
-    if (ss.init.single.filesys)
-        filesys.logMap(filesys.map("/"));
 
     //Serial1.begin(500000, SERIAL_8N1, RX1, TX1);
     //usb.begin(500000, RX1, TX1);
@@ -182,6 +200,17 @@ void setup()
     WiFi.begin(wifiData.data.ssid, wifiData.data.pass);
     MDNS.begin(wifiData.data.host);
     MDNS.addService("http", "tcp", ota.init());
+
+    if ((strcmp(wifiData.data.host, "module1") == 0) || (strcmp(wifiData.data.host, "module3") == 0))
+    {
+        suart1.init(5000000, RX0, TX0);
+    }
+    else if ((strcmp(wifiData.data.host, "module2") == 0) || (strcmp(wifiData.data.host, "module4") == 0))
+    {
+        suart1.init(5000000, RX1, TX1);
+    }
+
+    hub.setLinkSpeed(0, 5000000);
 }
 
 void quaternionToEuler(float qr, float qi, float qj, float qk, euler_t* ypr, bool degrees=false)
@@ -245,24 +274,24 @@ void loop()
     readPin %= 4;
     adc.setMux(readPin + ADS1120::AIN0_AVSS);
 
-    while (usb.messages.size())
-    {
-        USBMessageBroker::Message& msg = usb.messages.top();
-        switch (msg.type())
-        {
-            case 1:
-            {
-                SetDevice* setdevcmd = (SetDevice*) msg.data();
-                if (setdevcmd->on)
-                    ss.drivers.all |= 1 << setdevcmd->driver;
-                else
-                    ss.drivers.all &= ~(1 << setdevcmd->driver);
-                mcp.write(driverMap[setdevcmd->driver], setdevcmd->on);
-                break;
-            }
-        }
-        usb.messages.pop();
-    }
+    // while (usb.messages.size())
+    // {
+    //     USBMessageBroker::Message& msg = usb.messages.top();
+    //     switch (msg.type())
+    //     {
+    //         case 1:
+    //         {
+    //             SetDevice* setdevcmd = (SetDevice*) msg.data();
+    //             if (setdevcmd->on)
+    //                 ss.drivers.all |= 1 << setdevcmd->driver;
+    //             else
+    //                 ss.drivers.all &= ~(1 << setdevcmd->driver);
+    //             mcp.write(driverMap[setdevcmd->driver], setdevcmd->on);
+    //             break;
+    //         }
+    //     }
+    //     usb.messages.pop();
+    // }
 
     if (sendStateRate.isReady())
     {
@@ -284,6 +313,35 @@ void loop()
 
     //usb.update();
 
+    hub.update();
+
+    // if ((strcmp(wifiData.data.host, "module1") == 0) || (strcmp(wifiData.data.host, "module3") == 0))
+    // {
+    ByteStream* bs = suart1.getTXStream();
+    while (!hub[0].out.empty())
+    {
+        GridPacket& pkt = hub[0].out.top();
+        bs->lock();
+        bs->putUnlocked(pkt.raw(), pkt.size());
+        bs->unlock();
+        hub[0].out.pop();
+    }
+
+    bs = suart1.getRXStream();
+    bs->lock();
+    while (!bs->isEmptyUnlocked())
+    {
+        hub[0].in.insert(bs->getUnlocked());
+    }
+    bs->unlock();
+    // }
+
+    if (hubDebug.isReady())
+    {
+        Log("hub") << hub._table.toString();
+        Log("hub") << hub._graph.toString();
+        Log("hub") << "bytes: " << hub.totalBytes();
+    }
 
     
     // if (debug.isReady())

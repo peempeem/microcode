@@ -2,6 +2,7 @@
 #include "../util/priorityqueue.h"
 #include <algorithm>
 #include <sstream>
+#include <iomanip>
 
 //
 //// GridGraph Class
@@ -37,7 +38,7 @@ void GridGraph::representTable(NetworkTable& table)
             if (id)
             {
                 v.edges[j].id = *id;
-                v.edges[j].weight = 10000 * (conn.usage + conn.linkspeed / 8.0f) / (float) conn.linkspeed;
+                v.edges[j].weight = 10000 * (conn.usage * 8 + conn.linkspeed) / (float) conn.linkspeed;
             }
             else
                 v.edges[j].id = -1;
@@ -151,14 +152,21 @@ void GridGraph::pathBFS(std::vector<uint16_t>& p, uint16_t start, uint16_t end)
 std::string GridGraph::toString()
 {
     std::stringstream ss;
+    ss << "Enumerating Nodes ...\n";
     ss << "Vertex:\tEdges:\n";
     for (unsigned i = 0; i < _vertices.size(); ++i)
     {
-        ss << _toID[i] << "\t";
+        ss << std::setw(7) << _toID[i] << "\t";
         for (Vertex::Edge& e : _vertices[i].edges)
-            ss << "{" << _toID[e.id] << ", " << e.weight << "} ";
+        {
+            if (e.id < _toID.size())
+                ss << "{" << _toID[e.id] << ", " << e.weight << "} ";
+            else
+                ss << "{None, inf}";                
+        }
         ss << "\n";
     }
+    ss << "Done Enumerating Nodes";
     
     return ss.str();
 }

@@ -53,13 +53,13 @@ void onUpdateUpdater()
     if (upload.status == UPLOAD_FILE_START)
     {
         Update.begin();
-        Log("OTA") << "Update begin";
+        Log("OTA") << "Update begin.";
     }
     else if (upload.status == UPLOAD_FILE_WRITE)
     {
         updateSize = upload.totalSize;
         Update.write(upload.buf, upload.currentSize);
-        Log("OTA") << "Update size " << updateSize;
+        Log("OTA") << "Update size: " << updateSize;
     }
     else if (upload.status == UPLOAD_FILE_END)
     {
@@ -70,7 +70,7 @@ void onUpdateUpdater()
     else if (upload.status == UPLOAD_FILE_ABORTED)
     {
         updateSize = -1;
-        Log("OTA") << "Update aborted";
+        Log("OTA") << "Update aborted.";
     }
 }
 

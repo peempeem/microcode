@@ -21,6 +21,7 @@ template <class V> class Hash
                 Itterator(unsigned idx, std::vector<Node*>* table);
 
                 V& operator*();
+                V* operator->();
                 Itterator& operator++();
                 Itterator operator++(int);
                 bool operator!=(const Itterator& other) const;
@@ -89,8 +90,10 @@ template <class V> class HashInPlace
         
         struct Probe
         {
-            uint8_t probe   : 1 = 0;
-            uint8_t used    : 1 = 0;
+            uint8_t probe   : 1;
+            uint8_t used    : 1;
+
+            Probe(uint8_t probe=0, uint8_t used=0) : probe(probe), used(used) {}
         };
 
         class Itterator

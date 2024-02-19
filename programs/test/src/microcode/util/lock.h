@@ -20,7 +20,7 @@ class BinarySemaphore
         ~BinarySemaphore() { vSemaphoreDelete(_semaphore); }
 
         bool lock(TickType_t timeout=portMAX_DELAY) { return xSemaphoreTake(_semaphore, timeout) == pdTRUE; }
-        void unlock() { xSemaphoreGive(_semaphore) == pdTRUE; }
+        bool unlock() { return xSemaphoreGive(_semaphore) == pdTRUE; }
     
     private:
         xSemaphoreHandle _semaphore;

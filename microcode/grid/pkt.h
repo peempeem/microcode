@@ -16,8 +16,6 @@
 #define GRIDPACKET_SENDER_BITS      16
 #define GRIDPACKET_RECEIVER_BITS    16
 #define GRIDPACKET_ID_BITS          16
-#define GRIDPACKET_DHASH_BITS       16
-#define GRIDPACKET_HHASH_BITS       16
 
 class GridPacket
 {
@@ -33,8 +31,8 @@ class GridPacket
             uint32_t sender     : GRIDPACKET_SENDER_BITS;
             uint32_t receiver   : GRIDPACKET_RECEIVER_BITS;
             uint32_t id         : GRIDPACKET_ID_BITS;
-            uint32_t dhash      : GRIDPACKET_DHASH_BITS;
-            uint32_t hhash      : GRIDPACKET_HHASH_BITS;
+            uint32_t dhash;
+            uint32_t hhash;
             uint8_t data[];
         });
 
@@ -69,7 +67,7 @@ class GridPacket
 };
 
 const unsigned MAX_GRIDPACKET_DATA = MAX_GRIDPACKET_SIZE - sizeof(GridPacket::Packet);
-const unsigned GRIDPACKET_HEADER_DATA_SIZE = sizeof(GridPacket::Packet) - GRIDPACKET_HHASH_BITS / 8;
+const unsigned GRIDPACKET_HEADER_DATA_SIZE = sizeof(GridPacket::Packet) - sizeof(GridPacket::Packet::hhash);
 
 class PacketPriorityQueue : public MinPriorityQueue<GridPacket>, public SpinLock
 {

@@ -5,8 +5,10 @@
 #include "filter.h"
 #include "graph.h"
 #include "usage.h"
+#include "smsg.h"
 #include "../util/timer.h"
 #include "../util/priorityqueue.h"
+#include <unordered_map>
 
 class GridMessageHub
 {
@@ -19,6 +21,7 @@ class GridMessageHub
             AckNAckLong,
             Ping,
             Pong,
+            SharedMessage,
             Size
         };
 
@@ -36,6 +39,8 @@ class GridMessageHub
 
         GridMessageHub(unsigned numIO, unsigned broadcast=250);
 
+        unsigned id();
+
         IO::Public& operator[](unsigned io);
 
         void setLinkSpeed(unsigned branch, unsigned speed);
@@ -44,6 +49,8 @@ class GridMessageHub
 
         void updateTop(bool onlyIfLock=true);
         void update();
+
+        void listenFor(SharedGridBuffer& sgb);
 
         uint64_t totalBytes();
 
@@ -79,6 +86,8 @@ class GridMessageHub
 
         NetworkTable::Node _node;
         uint16_t _msgID;
+
+        std::unordered_map<std::string, SharedGridBuffer*> _sharedData;
 
         void _newID();
         void _kill(unsigned id);

@@ -150,7 +150,7 @@ std::string NetworkTable::toString()
         ss << "    time: " << (*it1).data.time << "\n";
         ss << "    Connections:";
         if ((*it1).connections.empty())
-            ss << " None";
+            ss << " None\n";
         else
         {
             ss << "\n";
@@ -162,8 +162,8 @@ std::string NetworkTable::toString()
                 ss << "        usage: " << (*it2).usage << "\n";
             }
         }
-        ss << "\n";
     }
+    ss << "Done Enumerating Nodes";
     
     return ss.str();
 }

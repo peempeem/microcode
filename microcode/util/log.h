@@ -7,23 +7,31 @@
 #include <iomanip>
 #include <streambuf>
 
-class Log : public std::stringstream
+class Log
 {
     public:
         Log();
-        Log(const char* header, unsigned headerPadding=16);
-        Log(const Log& other) { (*this) << other.rdbuf(); }
-        ~Log() { flush(); }
+        Log(const char* header, bool nlOnFlush=true, unsigned headerPadding=16);
+        Log(const Log& other);
+        ~Log();
 
-        Log& operator=(const Log& other);
-
+        Log& operator<<(std::string str);
+        Log& operator<<(const char* str);
+        template <class T> Log& operator<<(T val)
+        {
+            _ss << val;
+            return *this;
+        }
         Log& operator>>(ByteStream& stream);
 
-        void flush(bool nl=true);
+        void flush();
 
         void success();
         void failed();
 
     private:
+        std::stringstream _ss;
+        unsigned _headlen;
         bool _flushed;
+        bool _nl;
 };

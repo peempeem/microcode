@@ -41,6 +41,11 @@ template <class V> V& Hash<V>::Itterator::operator*()
     return (*_table)[_idx]->value;
 }
 
+template <class V> V* Hash<V>::Itterator::operator->()
+{
+    return &(*_table)[_idx]->value;
+}
+
 template <class V> typename Hash<V>::Itterator& Hash<V>::Itterator::operator++()
 {
     while (_idx < _table->size() && !(*_table)[++_idx]);

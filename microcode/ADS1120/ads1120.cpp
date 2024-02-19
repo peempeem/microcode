@@ -1,4 +1,5 @@
 #include "ads1120.h"
+#include "../util/log.h"
 
 #define CMD_POWER_DOWN      0x03
 #define CMD_RESET           0x07
@@ -15,6 +16,8 @@ ADS1120::ADS1120(SPIClass* spi, unsigned cs, unsigned drdy, unsigned clkspeed) :
 bool ADS1120::begin()
 {
     pinMode(_cs, OUTPUT);
+    digitalWrite(_cs, HIGH);
+
     pinMode(_drdy, INPUT);
 
     reset();

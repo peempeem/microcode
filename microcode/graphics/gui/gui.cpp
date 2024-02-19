@@ -1,6 +1,5 @@
 #include "gui.h"
-
-#if __has_include(<TFT_eSPI.h>)
+#include <TFT_Drivers/ST7789_Defines.h>
 
 GUI::GUI()
 {
@@ -91,5 +90,3 @@ void GUI::update(bool sleep)
             refereshRate.sleep();
     }
 }
-
-#endif

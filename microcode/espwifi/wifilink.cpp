@@ -127,24 +127,24 @@ bool WiFiLink::init(const char* name, unsigned random)
     delete[] nameBuf;
 
     if (!initialized)
-        Log(LogHeader) << "WiFi.softAP() failed";
+        Log(LogHeader) << "WiFi.softAP() failed\n";
 
     if (esp_now_init() != ESP_OK)
     {
-        Log(LogHeader) << "ESP Now init failed";
+        Log(LogHeader) << "ESP Now init failed\n";
         initialized = false;
     }
 
     if (esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_LR) != ESP_OK)
     {
 
-        Log(LogHeader) << "ESP Now set protocol failed";
+        Log(LogHeader) << "ESP Now set protocol failed\n";
         initialized = false;
     }
 
     if (esp_now_register_recv_cb(recvCallback) != ESP_OK)
     {
-        Log(LogHeader) << "ESP Now recv callback registration failed";
+        Log(LogHeader) << "ESP Now recv callback registration failed\n";
         initialized = false;
     }
 
@@ -183,19 +183,19 @@ void WiFiLink::setClockSpeed(unsigned megahertz)
 
     if (esp_now_init() != ESP_OK)
     {
-        Log(LogHeader) << "ESP Now init failed when changing clock speed";
+        Log(LogHeader) << "ESP Now init failed when changing clock speed\n";
         initialized = false;
     }
 
     if (esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_LR) != ESP_OK)
     {
-        Log(LogHeader) << "ESP Now set protocol failed when changing clock speed";
+        Log(LogHeader) << "ESP Now set protocol failed when changing clock speed\n";
         initialized = false;
     }
 
     if (esp_now_register_recv_cb(recvCallback) != ESP_OK)
     {
-        Log(LogHeader) << "ESP Now recv callback registration failed when changing clock speed";
+        Log(LogHeader) << "ESP Now recv callback registration failed when changing clock speed\n";
         initialized = false;
     }
 

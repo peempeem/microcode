@@ -46,6 +46,14 @@ GridMessageHub::GridMessageHub(unsigned numIO, unsigned broadcast) : _broadcast(
     _ios = std::vector<IO>(numIO);
     srand(sysTime());
     _newID();
+    _node.arrival = sysTime();
+    _node.data.time = _node.arrival;
+    _table.nodes[_id] = _node;
+}
+
+unsigned GridMessageHub::id()
+{
+    return _id;
 }
 
 GridMessageHub::IO::Public& GridMessageHub::operator[](unsigned io)
@@ -61,10 +69,11 @@ void GridMessageHub::setLinkSpeed(unsigned branch, unsigned speed)
 
 bool GridMessageHub::send(GridMessage& msg, uint16_t receiver, unsigned retries)
 {
-    if (receiver == (uint16_t) -1)
+    if (!receiver)
     {
         // send broadcast message
-
+        for (unsigned i = 0; i < _ios.size(); ++i)
+            _sendBranch(msg, i, receiver, retries);
     }
     else
     {
@@ -76,7 +85,6 @@ bool GridMessageHub::send(GridMessage& msg, uint16_t receiver, unsigned retries)
         if (branch != -1)
             _sendBranch(msg, branch, receiver, retries);
     }
-    
 }
 
 void GridMessageHub::updateTop(bool onlyIfLock)
@@ -114,14 +122,14 @@ void GridMessageHub::updateTop(bool onlyIfLock)
                 continue;
             
             // stash packet for processing if it arrived at its destination
-            if (pkt.get().receiver == _id || pkt.get().receiver == (uint16_t) -1)
+            if (pkt.get().receiver == _id || !pkt.get().receiver)
             {
                 InboundData::MessageStore& ms = _inbound[pkt.get().sender].store[pkt.get().id];
                 ms.msg.insert(pkt);
                 ms.branch = i;
 
                 // if brodcast message, propagate to other branches
-                if (pkt.get().receiver == (uint16_t) -1)
+                if (!pkt.get().receiver && pkt.get().type != (int) NetworkMessages::Table)
                 {
                     for (unsigned j = 0; j < _ios.size(); ++j)
                     {
@@ -242,10 +250,11 @@ void GridMessageHub::update()
                         _node.connections[(*storeIT).branch].node = td->sender;
                         NetworkTable table(td->table);
                         _table.merge(table);
-                        if (_node.connections[(*storeIT).branch].node == _id)
+                        if (td->sender == _id)
                         {
                             _kill(_id);
                             _newID();
+                            Log("hub") << "new id by kill";
                         }
                         break;
                     }
@@ -291,6 +300,20 @@ void GridMessageHub::update()
                         break;
                     }
 
+                    case (int) NetworkMessages::SharedMessage:
+                    {
+                        uint8_t* ptr = (*storeIT).msg.data();
+                        auto it = _sharedData.find(SharedGridBuffer::deserializeName(ptr));
+                        Log("hid") << _id;
+                        if (it != _sharedData.end())
+                        {
+                            it->second->lock();
+                            it->second->deserializeID(ptr);
+                            it->second->unlock();
+                        }
+                        break;
+                    }
+
                     default:
                     {
                         messages.push((*storeIT).msg, (*storeIT).msg.priority());
@@ -311,6 +334,7 @@ void GridMessageHub::update()
     }
     _inbound.shrink();
 
+    // update hub's node in table
     _node.arrival = sysTime();
     _node.data.time = _node.arrival;
 
@@ -319,25 +343,42 @@ void GridMessageHub::update()
         (*it).usage = _ios[usageIdx++].usage.usage();
 
     _table.nodes[_id] = _node;
-
     _table.update();
+
+    // remove nodes from table that are in graveyard
     _graveyard.preen();
-    
     for (auto it = _table.nodes.begin(); it != _table.nodes.end(); ++it)
     {
         if (_graveyard.contains(it.key(), false))
             _table.nodes.remove(it);
     }
     _table.nodes.shrink();
+
+    // update shared data
+    for (auto it = _sharedData.begin(); it != _sharedData.end(); ++it)
+    {
+        if (it->second->isNew(_id))
+        {
+            GridMessage msg((int) NetworkMessages::SharedMessage, 1, it->second->serialSize(_id));
+            uint8_t* ptr = msg.data();
+            it->second->serializeName(ptr);
+            it->second->serializeID(ptr, _id);
+
+            for (unsigned i = 0; i < _ios.size(); ++i)
+                _sendBranch(msg, i, 0, 0);
+        }
+        it->second->preen();
+    }
     
+    // send table broadcast
     if (_broadcast.isRinging())
     {
-        GridMessage msg((int) NetworkMessages::Table, -1, sizeof(uint16_t) + _table.serialSize());
+        GridMessage msg((int) NetworkMessages::Table, 0, sizeof(uint16_t) + _table.serialSize());
         *((uint16_t*) msg.data()) = _id;
         _table.serialize(msg.data() + sizeof(uint16_t));
 
         for (unsigned i = 0; i < _ios.size(); ++i)
-            _sendBranch(msg, i, -1, 0);
+            _sendBranch(msg, i, 0, 0);
         
         _graph.representTable(_table);
         _broadcast.reset();
@@ -347,6 +388,11 @@ void GridMessageHub::update()
         _ios[i].usage.update();
 
     _lock.unlock();
+}
+
+void GridMessageHub::listenFor(SharedGridBuffer& sgb)
+{
+    _sharedData[sgb.name()] = &sgb;
 }
 
 uint64_t GridMessageHub::totalBytes()
@@ -361,11 +407,7 @@ void GridMessageHub::_newID()
 {
     do
         _id = rand();
-    while (_id == (uint16_t) -1 || _table.nodes.contains(_id) || _graveyard.contains(_id));
-
-    _node.arrival = sysTime();
-    _node.data.time = _node.arrival;
-    _table.nodes[_id] = _node;
+    while (!_id || _table.nodes.contains(_id) || _graveyard.contains(_id));
 }
 
 void GridMessageHub::_kill(unsigned id)
@@ -376,7 +418,7 @@ void GridMessageHub::_kill(unsigned id)
     ((DeathNoteData*) msg.data())->victim = id;
 
     for (unsigned i = 0; i < _ios.size(); ++i)
-        _sendBranch(msg, i, -1, 0, false);
+        _sendBranch(msg, i, 0, 0, false);
 }
 
 int GridMessageHub::_getBranchByID(unsigned id)
