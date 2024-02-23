@@ -1,5 +1,6 @@
 #pragma once
 
+#include "mutex.h"
 #include <stdint.h>
 #include <string>
 #include <string.h>
@@ -31,10 +32,15 @@ class FileSys
         };
 
         bool init(bool format=true);
+        bool isInitialized();
         bool read(const char* path, uint8_t* buf, int size, int seek=0);
         bool write(const char* path, uint8_t* buf, int size, int seek=0);
         bool remove(const char* path);
         bool clear();
         std::vector<FileData> map(const char* path);
         std::string toString();
+    
+    private:
+        bool _init = false;
+        Mutex _lock;
 } static filesys;

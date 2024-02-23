@@ -4,26 +4,39 @@
 
 const static char* LogHeader = "filesys";
 
-bool FileSys::init(bool format) {
-    return SPIFFS.begin(true, "/spiffs", 32);
+bool FileSys::init(bool format)
+{
+    _lock.lock();
+    bool ret = SPIFFS.begin(true, "/spiffs", 32);
+    _lock.unlock();
+    _init = ret;
+    return ret;
+}
+
+bool FileSys::isInitialized()
+{
+    return _init;
 }
 
 bool FileSys::read(const char* path, uint8_t* buf, int size, int seek)
 {
+    _lock.lock();
     File file = SPIFFS.open(path);
     if (!file) 
     {
         file.close();
-        Log(LogHeader) << path << " does not exist\n";
+        _lock.unlock();
+        Log(LogHeader) << path << " does not exist";
         return false;
     }
     
     file.seek(seek, SeekMode::SeekCur);
     unsigned nbytes = file.read(buf, size);
     file.close();
+    _lock.unlock();
     if (nbytes != size)
     {
-        Log(LogHeader) << path << " read less bytes [" << nbytes << "] than requested [" << size << "]\n";
+        Log(LogHeader) << path << " read less bytes [" << nbytes << "] than requested [" << size << "]";
         return false;
     }
     return true;
@@ -31,16 +44,18 @@ bool FileSys::read(const char* path, uint8_t* buf, int size, int seek)
 
 bool FileSys::write(const char* path, uint8_t* buf, int size, int seek)
 {
+    _lock.lock();
     File file = SPIFFS.open(path, FILE_WRITE);
     if (!file)
-        Log(LogHeader) << "File does not exist, creating " << path << "\n";
+        Log(LogHeader) << "File does not exist, creating " << path;
     
     file.seek(seek, SeekMode::SeekCur);
     int nbytes = file.write(buf, size);
     file.close();
+    _lock.unlock();
     if (nbytes != size)
     {
-        Log(LogHeader) << "Wrote less bytes [" << nbytes << "] than requested [" << size << "]\n";
+        Log(LogHeader) << "Wrote less bytes [" << nbytes << "] than requested [" << size << "]";
         return false;
     }
     return true;
@@ -48,13 +63,14 @@ bool FileSys::write(const char* path, uint8_t* buf, int size, int seek)
 
 bool FileSys::remove(const char* path)
 {
-    if (SPIFFS.remove(path))
-    {
-        Log(LogHeader) << "Removed " << path << "\n";
-        return true;
-    }
-    Log(LogHeader) << "Failed to remove " << path << "\n";
-    return false;
+    _lock.lock();
+    bool ret = SPIFFS.remove(path);
+    _lock.unlock();
+    if (ret)
+        Log(LogHeader) << "Removed " << path;
+    else
+        Log(LogHeader) << "Failed to remove " << path;
+    return ret;
 }
 
 bool FileSys::clear()
@@ -62,16 +78,19 @@ bool FileSys::clear()
     Log log(LogHeader);
     log << "Clearing filesystem";
     std::vector<FileData> files = map("/");
+    _lock.lock();
     for (FileData& file : files)
     {
         if (strlen(file.name()) == 1)
             continue;
         if (!remove(file.name()))
         {
+            _lock.unlock();
             log.failed();
             return false;
         }       
     }
+    _lock.unlock();
     log.success();
     return true;
 }
@@ -79,10 +98,14 @@ bool FileSys::clear()
 std::vector<FileSys::FileData> FileSys::map(const char* path)
 {
     std::vector<FileData> files;
+    _lock.lock();
     File root = SPIFFS.open(path);
     if (!root.isDirectory())
+    {
+        _lock.unlock();
         return files;
-    
+    }
+
     File file = SPIFFS.open(path);
     while (file)
     {
@@ -91,6 +114,7 @@ std::vector<FileSys::FileData> FileSys::map(const char* path)
         file = root.openNextFile();
     }
     root.close();
+    _lock.unlock();
     return files;
 }
 

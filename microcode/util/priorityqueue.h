@@ -6,8 +6,6 @@
 template <class T> class MinPriorityQueue
 {
     public:
-        ~MinPriorityQueue();
-
         bool empty();
         unsigned size();
 
@@ -18,18 +16,8 @@ template <class T> class MinPriorityQueue
         unsigned topPriority();
 
     private:
-        struct Item
-        {
-            unsigned priority;
-            T* item;
-                        
-            Item();
-            Item(T* item, unsigned priority);
-
-            bool operator>(const Item& other) const;
-        };
-
-        std::priority_queue<Item, std::vector<Item>, std::greater<Item>> _pq;
+        std::priority_queue<unsigned, std::vector<unsigned>, std::greater<unsigned>> _pq;
+        Hash<std::queue<T>> _data;
 };
 
 #include "priorityqueue.hpp"

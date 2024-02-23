@@ -33,6 +33,7 @@ class GridMessageHub
                 PacketPriorityQueue out;
             } pub;
             UsageMeter usage;
+            
         };
 
         MinPriorityQueue<GridMessage> messages;
@@ -57,6 +58,7 @@ class GridMessageHub
         NetworkTable _table;
         uint16_t _id;
         GridGraph _graph;
+        Mutex _lock;
     
     private:
         struct InboundData
@@ -77,12 +79,11 @@ class GridMessageHub
             uint8_t branch;
         });
 
-        BinarySemaphore _lock;
+        
         Timer _broadcast;
         std::vector<IO> _ios;
         Hash<InboundData> _inbound;
         IDFilter _graveyard;
-        std::queue<unsigned> _nextToBrodcast;
 
         NetworkTable::Node _node;
         uint16_t _msgID;

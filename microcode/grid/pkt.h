@@ -1,6 +1,6 @@
 #include "../util/fifo.h"
 #include "../util/hash.h"
-#include "../util/lock.h"
+#include "../util/mutex.h"
 #include "../util/timer.h"
 #include "../util/sharedbuf.h"
 #include "../util/priorityqueue.h"
@@ -59,9 +59,11 @@ class GridPacket
 
         bool isStale();
         bool isDead();
+
+        SharedBuffer _buf;
     
     private:
-        SharedBuffer _buf;
+        
         Timer _stale;
         unsigned _retries;
 };
@@ -69,7 +71,7 @@ class GridPacket
 const unsigned MAX_GRIDPACKET_DATA = MAX_GRIDPACKET_SIZE - sizeof(GridPacket::Packet);
 const unsigned GRIDPACKET_HEADER_DATA_SIZE = sizeof(GridPacket::Packet) - sizeof(GridPacket::Packet::hhash);
 
-class PacketPriorityQueue : public MinPriorityQueue<GridPacket>, public SpinLock
+class PacketPriorityQueue : public MinPriorityQueue<GridPacket>, public Mutex
 {
     public:
         PacketPriorityQueue();

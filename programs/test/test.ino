@@ -1,148 +1,100 @@
-#include "src/microcode/hal/hal.h"
-#include "src/microcode/hardware/suart.h"
 #include "src/microcode/util/log.h"
 #include "src/microcode/MCP23S08/mcp23s08.h"
 #include "src/microcode/ADS1120/ads1120.h"
-#include "src/microcode/util/rate.h"
-#include "src/microcode/grid/msg.h"
-#include "src/microcode/grid/hub.h"
-#include "src/microcode/usb/usbcom.h"
 #include "src/microcode/util/filesys.h"
-#include "src/microcode/ota/ota.h"
 #include "src/microcode/util/pvar.h"
-#include "src/microcode/grid/hub.h"
+#include "src/tasks.h"
+#include "src/func.h"
 
-#include <Adafruit_NeoPixel.h>
 #include <Adafruit_BNO08x.h>
 #include <SPI.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
 
-#define MCP_CS  22
-#define MCP_RST 27
+Rate                debugMem(10);
+Rate                hubPost(1);
+Rate                robotStatePost(200);
 
-#define ADC_CS      15
-#define ADC_DRDY    39
+SPIClass            spiBus(VSPI);
+MCP23S08            mcp(spiBus, MCP_CS, MCP_RST);
+ADS1120             adc(spiBus, ADC_CS, ADC_DRDY);
+Adafruit_BNO08x     imu(IMU_RST);
+Adafruit_NeoPixel   pixles(NUM_PXL, PXL_PIN, NEO_GRB + NEO_KHZ800);
 
-#define IMU_CS 5
-#define IMU_INT 25
-#define IMU_RST 14
+PVar<WiFiData>      wifiData("/wifi");
 
-#define PXL_PIN 21
-#define NUM_PXL 4
+GridMessageHub      hub(2);
+SharedGridBuffer    robotState("RobotState", 1);
 
-#define RX0 34
-#define TX0 33
-#define RX1 35
-#define TX1 32
-
-GridMessageHub hub(1);
-Rate hubDebug(1);
-
-uint8_t driverMap[] = { 1, 0, 3, 2, 5, 4, 7, 6 };
-
-PACK(struct StageState
-{
-    uint64_t timestamp;
-    union Initialization
-    {
-        struct Fields
-        {
-            uint8_t filesys : 1;
-            uint8_t wifi    : 1;
-            uint8_t mcp     : 1;
-            uint8_t adc     : 1;
-            uint8_t imu     : 1;
-            uint8_t comm0   : 1;
-            uint8_t comm1   : 1;
-            uint8_t debug   : 1;
-        } single;
-        uint8_t all;
-    } init;
-
-    union Drivers
-    {
-        struct Fields
-        {
-            uint8_t s0 : 1;
-            uint8_t s1 : 1;
-            uint8_t s2 : 1;
-            uint8_t s3 : 1;
-            uint8_t s4 : 1;
-            uint8_t s5 : 1;
-            uint8_t m0 : 1;
-            uint8_t m1 : 1;
-        } single;
-        uint8_t all;
-    } drivers;
-    
-    float pressure[4];
-    float ypr[3];
-    float power;
-}) ss;
-
-PACK(struct SetDevice
-{
-    uint8_t driver;
-    uint8_t on;
-});
-
-SPIClass spiBus(VSPI);
-MCP23S08 mcp(&spiBus, MCP_CS, MCP_RST);
-ADS1120 adc(&spiBus, ADC_CS, ADC_DRDY);
-Adafruit_BNO08x imu(IMU_RST);
-Adafruit_NeoPixel pixel(NUM_PXL, PXL_PIN, NEO_GRB + NEO_KHZ800);
-
-Rate r(1);
-Rate g(2);
-Rate b(3);
-
-Rate pixelSend(100);
-Rate sendStateRate(100);
-
-unsigned readPin = 0;
-
-struct euler_t 
-{
-  float yaw;
-  float pitch;
-  float roll;
-} ypr;
-
-sh2_SensorValue_t sensorValue;
-
-struct WiFiData
-{
-    char ssid[64];
-    char host[64];
-    char pass[64];
-};
-
-PVar<WiFiData> wifiData("/wifi");
+unsigned            adcReadPin = 0;
+sh2_SensorValue_t   sensorValue;
+StageState          ss;
 
 void setup()
 {
     Log("init") << "Begin initialization...";
 
-    suart0.init(115200);
-    ss.init.single.debug = 1;
-    Log() >> *suart0.getTXStream();
-
+    if (suart0.init(500000))
+    {
+        Log() >> *suart0.getTXStream();
+        ss.init.debug = 1;
+    }
+    else
+        Log().disable();
+    
     {
         Log log("init");
         log << "File System";
-        if (!filesys.init())
+        if (!filesys.init() && !filesys.init())
         {
             log.failed();
             while (1);
         }
         log.success();
+
+        Log("init") << filesys.toString();
+        ss.init.filesys = 1;
     }
 
-    Log("init") << filesys.toString();
-    ss.init.single.filesys = 1;
+    {
+        Log log("init");
+        log << "WiFi";
 
-    wifiData.load();
+        bool success = true;
+        if (success && !wifiData.load())
+            success = false;
+        if (success && !WiFi.mode(WIFI_AP_STA))
+            success = false;
+        if (success && !WiFi.begin(wifiData.data.ssid, wifiData.data.pass))
+            success = false;
+        if (success && !WiFi.setAutoReconnect(true))
+            success = false;
+        if (success && !MDNS.begin(wifiData.data.host))
+            success = false;
+        if (success && !MDNS.addService("http", "tcp", ota.init(80, false)))
+            success = false;
+
+        if (success)
+        {
+            log.success();
+            ss.init.wifi = 1;
+            Log("init") << "Hostname: " << wifiData.data.host;
+            Log("init") << "Network: " << wifiData.data.ssid;
+            Log("init") << "Password: " << wifiData.data.pass;
+        }
+        else
+            log.failed();
+    }
+
+    xTaskCreateUniversal(
+        runPixels, 
+        "runPixels", 
+        8 * 1024, 
+        NULL, 
+        1, 
+        NULL, 
+        tskNO_AFFINITY);
+
     spiBus.begin();
 
     {
@@ -154,8 +106,8 @@ void setup()
         {
             for (unsigned i = 0; i < 8; i++)
                 mcp.setMode(i, OUTPUT);
-            ss.init.single.mcp = 1;
             log.success();
+            ss.init.mcp = 1;
         }
     }
     
@@ -171,8 +123,8 @@ void setup()
             adc.setVoltageRef(ADS1120::External_REFP0_REFN0); 
             adc.setMux(ADS1120::AIN0_AVSS);
             adc.setConversionMode(ADS1120::Continuous);
-            ss.init.single.adc = 1;
             log.success();
+            ss.init.adc = 1;
         }
     }
     
@@ -183,96 +135,178 @@ void setup()
             log.failed();
         else
         {
-            ss.init.single.imu = 1;
             log.success();
+            ss.init.imu = 1;
         }
     }
 
-    Log("init") << "Hostname: " << wifiData.data.host;
-    Log("init") << "Network: " << wifiData.data.ssid;
-    Log("init") << "Password: " << wifiData.data.pass;
+    {
+        Log log("init");
+        log << "Comm 0";
+        if (!suart1.init(COMM_BAUD, RX0, TX0, false))
+            log.failed();
+        else
+        {
+            log.success();
+            ss.init.comm0 = 1;
+
+            xTaskCreateUniversal(
+                transferPackets, 
+                "pktTrans0", 
+                8 * 1024, 
+                (void*) new TransferPacketArgs(&hub, 0, &suart1), 
+                15, 
+                NULL, 
+                1);
+        }
+    }
+
+    {
+        Log log("init");
+        log << "Comm 1";
+        if (!suart2.init(COMM_BAUD, RX1, TX1, false))
+            log.failed();
+        else
+        {
+            log.success();
+            ss.init.comm0 = 1;
+
+            xTaskCreateUniversal(
+                transferPackets, 
+                "pktTrans1", 
+                8 * 1024, 
+                (void*) new TransferPacketArgs(&hub, 1, &suart2), 
+                15, 
+                NULL, 
+                1);
+        }
+    }
+
+    hub.setLinkSpeed(0, COMM_BAUD);
+    hub.setLinkSpeed(1, COMM_BAUD);
+    hub.listenFor(robotState);
+    xTaskCreateUniversal(
+        updateHub, 
+        "updateHub", 
+        12 * 1024, 
+        (void*) &hub, 
+        10, 
+        NULL, 
+        1);
+    
     Log("init") << "Initialization complete";
-
-    //Serial1.begin(500000, SERIAL_8N1, RX1, TX1);
-    //usb.begin(500000, RX1, TX1);
-
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.begin(wifiData.data.ssid, wifiData.data.pass);
-    MDNS.begin(wifiData.data.host);
-    MDNS.addService("http", "tcp", ota.init());
-
-    if ((strcmp(wifiData.data.host, "module1") == 0) || (strcmp(wifiData.data.host, "module3") == 0))
-    {
-        suart1.init(5000000, RX0, TX0);
-    }
-    else if ((strcmp(wifiData.data.host, "module2") == 0) || (strcmp(wifiData.data.host, "module4") == 0))
-    {
-        suart1.init(5000000, RX1, TX1);
-    }
-
-    hub.setLinkSpeed(0, 5000000);
-}
-
-void quaternionToEuler(float qr, float qi, float qj, float qk, euler_t* ypr, bool degrees=false)
-{
-    float sqr = sq(qr);
-    float sqi = sq(qi);
-    float sqj = sq(qj);
-    float sqk = sq(qk);
-
-    ypr->yaw = atan2(2.0 * (qi * qj + qk * qr), (sqi - sqj - sqk + sqr));
-    ypr->pitch = asin(-2.0 * (qi * qk - qj * qr) / (sqi + sqj + sqk + sqr));
-    ypr->roll = atan2(2.0 * (qj * qk + qi * qr), (-sqi - sqj + sqk + sqr));
-
-    if (degrees) 
-    {
-        ypr->yaw *= RAD_TO_DEG;
-        ypr->pitch *= RAD_TO_DEG;
-        ypr->roll *= RAD_TO_DEG;
-    }
 }
 
 void loop()
 {
-    if (ss.init.single.imu)
+    if (ss.init.imu)
     {
         if (imu.wasReset())
-            imu.enableReport(SH2_ARVR_STABILIZED_RV, 5000);
+            imu.enableReport(SH2_ARVR_STABILIZED_RV, IMU_REPORT);
         
-        if (imu.getSensorEvent(&sensorValue))
+        if (imu.getSensorEvent(&sensorValue) && sensorValue.sensorId == SH2_ARVR_STABILIZED_RV)
         {
-            switch (sensorValue.sensorId) 
-            {
-                case SH2_ARVR_STABILIZED_RV:
-                {
-                    quaternionToEuler(
-                        sensorValue.un.arvrStabilizedRV.real, 
-                        sensorValue.un.arvrStabilizedRV.i,
-                        sensorValue.un.arvrStabilizedRV.j,
-                        sensorValue.un.arvrStabilizedRV.k,
-                        &ypr, 
-                        true);
-                }
-            }
+            quaternionToEuler(
+                sensorValue.un.arvrStabilizedRV.real, 
+                sensorValue.un.arvrStabilizedRV.i,
+                sensorValue.un.arvrStabilizedRV.j,
+                sensorValue.un.arvrStabilizedRV.k,
+                &ss.sensors.ypr, 
+                true);
         }
     }
 
-    if (pixelSend.isReady())
+    ss.sensors.pressure[adcReadPin++] = adcVoltageToPressure(adc.readVoltage(ADC_REF));
+    adcReadPin %= ADC_PORTS;
+    adc.setMux(adcReadPin + ADS1120::AIN0_AVSS);
+
+    if (debugMem.isReady())
+        Log("MemoryUsage") << sysMemUsage();
+    
+    if (hubPost.isReady())
     {
-        for (unsigned i = 0; i < 4; i++)
-        {
-            pixel.setPixelColor(i, 
-                pixel.Color(
-                    r.getStageCos(0.1f * i) * 255, 
-                    g.getStageCos(0.1f * i) * 255, 
-                    b.getStageCos(0.1f * i) * 255));
-        }
-        pixel.show();
+        hub._lock.lock();
+        Log("hub") << hub._table.toString();
+        Log("hub") << hub._graph.toString();
+        Log("hub") << "bytes: " << hub.totalBytes();
+        hub._lock.unlock();
+        Log("freee") << ESP.getMinFreeHeap();
     }
 
-    ss.pressure[readPin++] = 20 + 230 * ((adc.readVoltage(5) - 0.204f) / 4.692f);
-    readPin %= 4;
-    adc.setMux(readPin + ADS1120::AIN0_AVSS);
+    // if (suart1.read())
+    // {
+    //     ByteStream* stream = suart1.getRXStream();
+
+    //     uint8_t buf[128];
+
+    //     while (true)
+    //     {
+    //         stream->lock();
+    //         if (stream->isEmptyUnlocked())
+    //         {
+    //             stream->unlock();
+    //             break;
+    //         }
+
+    //         unsigned pulled = stream->getUnlocked(buf, 128);
+    //         stream->unlock();
+
+    //         for (unsigned i = 0; i < pulled; ++i)
+    //             hub[0].in.insert(buf[i]);
+    //     }
+    // }
+
+    // hub[0].out.lock();
+    // while (!hub[0].out.empty())
+    // {
+    //     GridPacket& pkt = hub[0].out.top();
+    //     suart1.write(pkt.raw(), pkt.size());
+    //     hub[0].out.pop();
+    // }
+    // hub[0].out.unlock();
+
+    // if (suart2.read())
+    // {
+    //     ByteStream* stream = suart2.getRXStream();
+
+    //     uint8_t buf[128];
+
+    //     while (true)
+    //     {
+    //         stream->lock();
+    //         if (stream->isEmptyUnlocked())
+    //         {
+    //             stream->unlock();
+    //             break;
+    //         }
+
+    //         unsigned pulled = stream->getUnlocked(buf, 128);
+    //         stream->unlock();
+
+    //         for (unsigned i = 0; i < pulled; ++i)
+    //             hub[1].in.insert(buf[i]);
+    //     }
+    // }
+
+    // hub[1].out.lock();
+    // while (!hub[1].out.empty())
+    // {
+    //     GridPacket& pkt = hub[1].out.top();
+    //     suart2.write(pkt.raw(), pkt.size());
+    //     hub[1].out.pop();
+    // }
+    // hub[1].out.unlock();
+    
+    // hub.update();
+
+    if (robotStatePost.isReady())
+    {
+        robotState.lock();
+        SharedBuffer& buf = robotState.touch(hub.id());
+        buf.resize(sizeof(StageState));
+        memcpy(buf.data(), (uint8_t*) &ss, sizeof(StageState));
+        robotState.unlock();
+    }
 
     // while (usb.messages.size())
     // {
@@ -293,55 +327,53 @@ void loop()
     //     usb.messages.pop();
     // }
 
-    if (sendStateRate.isReady())
-    {
-        ss.timestamp = sysTime();
+    // if (sendStateRate.isReady())
+    // {
+    //     ss.timestamp = sysTime();
 
-        ss.power = 12 * 0.075;
-        for (unsigned i = 0; i < 8; i++)
-        {
-            if (0x01 & (ss.drivers.all >> i))
-                ss.power += 12 * 0.2;
-        }
+    //     ss.power = 12 * 0.075;
+    //     for (unsigned i = 0; i < 8; i++)
+    //     {
+    //         if (0x01 & (ss.drivers.all >> i))
+    //             ss.power += 12 * 0.2;
+    //     }
 
-        ss.ypr[0] = ypr.yaw;
-        ss.ypr[1] = ypr.pitch;
-        ss.ypr[2] = ypr.roll;
+    //     ss.ypr[0] = ypr.yaw;
+    //     ss.ypr[1] = ypr.pitch;
+    //     ss.ypr[2] = ypr.roll;
 
-        //usb.send(0, 0, (uint8_t*) &ss, sizeof(ss));
-    }
+    //     //usb.send(0, 0, (uint8_t*) &ss, sizeof(ss));
+    // }
 
     //usb.update();
 
-    hub.update();
-
     // if ((strcmp(wifiData.data.host, "module1") == 0) || (strcmp(wifiData.data.host, "module3") == 0))
     // {
-    ByteStream* bs = suart1.getTXStream();
-    while (!hub[0].out.empty())
-    {
-        GridPacket& pkt = hub[0].out.top();
-        bs->lock();
-        bs->putUnlocked(pkt.raw(), pkt.size());
-        bs->unlock();
-        hub[0].out.pop();
-    }
+    //     ByteStream* bs = suart1.getTXStream();
+    //     while (!hub[0].out.empty())
+    //     {
+    //         GridPacket& pkt = hub[0].out.top();
+    //         bs->lock();
+    //         bs->putUnlocked(pkt.raw(), pkt.size());
+    //         bs->unlock();
+    //         hub[0].out.pop();
+    //     }
 
-    bs = suart1.getRXStream();
-    bs->lock();
-    while (!bs->isEmptyUnlocked())
-    {
-        hub[0].in.insert(bs->getUnlocked());
-    }
-    bs->unlock();
+    //     bs = suart1.getRXStream();
+    //     bs->lock();
+    //     while (!bs->isEmptyUnlocked())
+    //     {
+    //         hub[0].in.insert(bs->getUnlocked());
+    //     }
+    //     bs->unlock();
     // }
 
-    if (hubDebug.isReady())
-    {
-        Log("hub") << hub._table.toString();
-        Log("hub") << hub._graph.toString();
-        Log("hub") << "bytes: " << hub.totalBytes();
-    }
+    // if (hubDebug.isReady())
+    // {
+    //     Log("hub") << hub._table.toString();
+    //     Log("hub") << hub._graph.toString();
+    //     Log("hub") << "bytes: " << hub.totalBytes();
+    // }
 
     
     // if (debug.isReady())

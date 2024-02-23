@@ -133,7 +133,7 @@ class ADS1120
             DOUT_DRDY
         };
 
-        ADS1120(SPIClass* spi, unsigned cs, unsigned drdy, unsigned clkspeed=5e6);
+        ADS1120(SPIClass& spi, unsigned cs, unsigned drdy, unsigned clkspeed=5e6);
 
         bool begin();
         
@@ -207,6 +207,7 @@ class ADS1120
         int _mode = -1;
         int _cmode = -1;
         unsigned _gain = 1;
+        bool _initialized = false;
 
         void _sendCommand(uint8_t cmd);
         void _writeReg(uint8_t addr, Registers reg);

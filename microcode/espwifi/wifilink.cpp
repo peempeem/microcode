@@ -1,5 +1,5 @@
 #include "wifilink.h"
-#include "../util/lock.h"
+#include "../util/mutex.h"
 #include "../util/log.h"
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -79,7 +79,7 @@ typedef struct
     } vendor_specific_content;
 } __attribute__ ((packed)) espnow_frame_format_t;
 
-static BinarySemaphore recvLock;
+static Mutex recvLock;
 static std::queue<RecvMsg> recvMsgs;
 static std::queue<int> recvRssi;
 
@@ -255,11 +255,12 @@ void WiFiLink::update()
     {
         recvLock.lock();
         bool empty = recvMsgs.empty();
-        recvLock.unlock();
         if (empty)
+        {
+            recvLock.unlock();
             break;
+        }
         
-        recvLock.lock();
         RecvMsg msg = recvMsgs.front();
         int rssi = recvRssi.front();
         recvMsgs.pop();

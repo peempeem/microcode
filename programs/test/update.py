@@ -9,7 +9,7 @@ from rich.console import Console
 import rich
 import math
 
-hosts = ['module1', 'module2', 'module3', 'module4']
+hosts = ['module1', 'module2', 'module3', 'module4', 'controller', 'test2']
 
 class Updater:
     def __init__(self, path, host, proc=mp.Process):

@@ -8,7 +8,8 @@
 #define CMD_READ_REG        0x20
 #define CMD_WRITE_REG       0x40
 
-ADS1120::ADS1120(SPIClass* spi, unsigned cs, unsigned drdy, unsigned clkspeed) : _spi(spi), _cs(cs), _drdy(drdy), _clkspeed(clkspeed)
+ADS1120::ADS1120(SPIClass& spi, unsigned cs, unsigned drdy, unsigned clkspeed)
+    : _spi(&spi), _cs(cs), _drdy(drdy), _clkspeed(clkspeed)
 {
 
 }
@@ -249,6 +250,9 @@ void ADS1120::_sendCommand(uint8_t cmd)
 
 void ADS1120::_writeReg(uint8_t addr, Registers reg)
 {
+    if (!_initialized)
+        return;
+    
     _spi->beginTransaction(SPISettings(_clkspeed, MSBFIRST, SPI_MODE1));
     digitalWrite(_cs, LOW);
     _spi->transfer(CMD_WRITE_REG | (addr << 2));
@@ -259,6 +263,9 @@ void ADS1120::_writeReg(uint8_t addr, Registers reg)
 
 ADS1120::Registers ADS1120::_readReg(uint8_t addr)
 {
+    if (!_initialized)
+        return Registers();
+    
     _spi->beginTransaction(SPISettings(_clkspeed, MSBFIRST, SPI_MODE1));
     digitalWrite(_cs, LOW);
     _spi->transfer(CMD_READ_REG | (addr << 2));
@@ -270,6 +277,9 @@ ADS1120::Registers ADS1120::_readReg(uint8_t addr)
 
 bool ADS1120::_readData(uint16_t& data, unsigned timeout)
 {
+    if (!_initialized)
+        return false;
+    
     _spi->beginTransaction(SPISettings(_clkspeed, MSBFIRST, SPI_MODE1));
     digitalWrite(_cs, LOW);
 

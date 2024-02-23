@@ -1,7 +1,8 @@
 #include "mcp23s08.h"
 #include "../util/log.h"
 
-MCP23S08::MCP23S08(SPIClass* spi, unsigned cs, unsigned rst, unsigned clkspeed, unsigned addr) : _spi(spi), _cs(cs), _rst(rst), _clkspeed(clkspeed)
+MCP23S08::MCP23S08(SPIClass& spi, unsigned cs, unsigned rst, unsigned clkspeed, unsigned addr) 
+    : _spi(&spi), _cs(cs), _rst(rst), _clkspeed(clkspeed)
 {
     _opCode = 0x40 | ((addr & 0x03) << 1);
 }

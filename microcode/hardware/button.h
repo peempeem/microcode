@@ -1,10 +1,10 @@
 #pragma once
 
 #include "../util/timer.h"
-#include "../util/lock.h"
+#include "../util/mutex.h"
 #include <queue>
 
-class Button : private BinarySemaphore
+class Button : private Mutex
 {
     public:
         struct TapEvent

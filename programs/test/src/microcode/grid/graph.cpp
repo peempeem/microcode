@@ -16,7 +16,7 @@ GridGraph::GridGraph()
 void GridGraph::representTable(NetworkTable& table)
 {
     _vertices = std::vector<Vertex>(table.nodes.size());
-    _toIDX = HashInPlace<uint16_t>(table.nodes.size());
+    _toIDX = StaticHash<uint16_t>(table.nodes.size());
     _toID = std::vector<uint16_t>(table.nodes.size());
     
     unsigned i = 0;

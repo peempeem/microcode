@@ -254,7 +254,6 @@ void GridMessageHub::update()
                         {
                             _kill(_id);
                             _newID();
-                            Log("hub") << "new id by kill";
                         }
                         break;
                     }
@@ -303,12 +302,13 @@ void GridMessageHub::update()
                     case (int) NetworkMessages::SharedMessage:
                     {
                         uint8_t* ptr = (*storeIT).msg.data();
-                        auto it = _sharedData.find(SharedGridBuffer::deserializeName(ptr));
-                        Log("hid") << _id;
+                        std::string str;
+                        ptr += SharedGridBuffer::deserializeName(ptr, str);
+                        auto it = _sharedData.find(str);
                         if (it != _sharedData.end())
                         {
                             it->second->lock();
-                            it->second->deserializeID(ptr);
+                            ptr += it->second->deserializeIDS(ptr);
                             it->second->unlock();
                         }
                         break;
@@ -329,7 +329,7 @@ void GridMessageHub::update()
         (*inIT).store.shrink();
 
         (*inIT).filter.preen();
-        if ((*inIT).filter.size() == 0 && (*inIT).store.size() == 0)
+        if (!(*inIT).filter.size() && !(*inIT).store.size())
             _inbound.remove(inIT);
     }
     _inbound.shrink();
@@ -357,25 +357,35 @@ void GridMessageHub::update()
     // update shared data
     for (auto it = _sharedData.begin(); it != _sharedData.end(); ++it)
     {
-        if (it->second->isNew(_id))
+        it->second->lock();
+        if (it->second->canWrite(_id))
         {
-            GridMessage msg((int) NetworkMessages::SharedMessage, 1, it->second->serialSize(_id));
+            unsigned ss = it->second->serialSize(_id);
+            GridMessage msg((int) NetworkMessages::SharedMessage, 1, ss);
             uint8_t* ptr = msg.data();
-            it->second->serializeName(ptr);
-            it->second->serializeID(ptr, _id);
+            ptr += it->second->serializeName(ptr);
+            ptr += it->second->serializeIDS(ptr, _id);
+
+            it->second->preen();
+            it->second->unlock();
 
             for (unsigned i = 0; i < _ios.size(); ++i)
                 _sendBranch(msg, i, 0, 0);
         }
-        it->second->preen();
+        else
+        {
+            it->second->preen();
+            it->second->unlock();
+        }
     }
     
     // send table broadcast
     if (_broadcast.isRinging())
     {
-        GridMessage msg((int) NetworkMessages::Table, 0, sizeof(uint16_t) + _table.serialSize());
+        unsigned ss = _table.serialSize();
+        GridMessage msg((int) NetworkMessages::Table, 0, sizeof(uint16_t) + ss);
         *((uint16_t*) msg.data()) = _id;
-        _table.serialize(msg.data() + sizeof(uint16_t));
+        unsigned s = _table.serialize(msg.data() + sizeof(uint16_t));
 
         for (unsigned i = 0; i < _ios.size(); ++i)
             _sendBranch(msg, i, 0, 0);
@@ -392,7 +402,9 @@ void GridMessageHub::update()
 
 void GridMessageHub::listenFor(SharedGridBuffer& sgb)
 {
+    _lock.lock();
     _sharedData[sgb.name()] = &sgb;
+    _lock.unlock();
 }
 
 uint64_t GridMessageHub::totalBytes()
@@ -451,12 +463,13 @@ void GridMessageHub::_sendBranch(GridMessage& msg, unsigned branch, unsigned rec
     msg.package(packets, _id, receiver, _msgID++, retries);
 
     unsigned bytes = 0;
+    
     (*this)[branch].out.lock();
     for (GridPacket& pkt : packets)
     {
         (*this)[branch].out.push(pkt);
         bytes += pkt.size();
-    }   
+    }
     (*this)[branch].out.unlock();
 
     _ios[branch].usage.trackBytes(bytes);

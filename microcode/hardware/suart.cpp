@@ -3,7 +3,8 @@
 
 const static char* LogHeader = "SUART";
 
-#define BUF_SLICE 64
+#define BUF_SLICE           128
+#define MIN_RINGBUF_SIZE    256
 
 void send_bytes(SUART::BackendData* backend)
 {
@@ -29,7 +30,7 @@ void send_bytes(SUART::BackendData* backend)
     backend->write.unlock();
 }
 
-void recv_bytes(SUART::BackendData* backend)
+bool recv_bytes(SUART::BackendData* backend)
 {
     size_t bufSize;
     uint8_t buf[BUF_SLICE];
@@ -41,14 +42,16 @@ void recv_bytes(SUART::BackendData* backend)
         backend->rx.put(buf, pulled);
         uart_get_buffered_data_len(backend->port, &bufSize);
     }
+    bool ret = !backend->rx.isEmpty();
     backend->read.unlock();
+    return ret;
 }
 
 void SUARTBackend(void* args)
 {
     SUART::BackendData* backend = (SUART::BackendData*) args;
-
     uint32_t notification = 0;
+
     while (true)
     {
         xTaskNotifyWait(0, UINT32_MAX, &notification, backend->latency / portTICK_PERIOD_MS);
@@ -73,7 +76,8 @@ SUART::~SUART()
 bool SUART::init(
     unsigned baudrate, 
     unsigned rx, 
-    unsigned tx, 
+    unsigned tx,
+    bool usingTask,
     uart_word_length_t dataBits, 
     uart_parity_t parity, 
     uart_stop_bits_t stopBits,
@@ -92,7 +96,7 @@ bool SUART::init(
         return false;
     }
 
-    unsigned bufSize = max(256, (int) (1.25f * latency * baudrate / ((int) (dataBits + 5) * 1000.0f)));
+    unsigned bufSize = max(MIN_RINGBUF_SIZE, (int) (1.25f * latency * baudrate / ((int) (dataBits + 5) * 1000.0f)));
     
     if (uart_driver_install(_port, bufSize, bufSize, 0, NULL, 0) != ESP_OK)
     {
@@ -139,8 +143,11 @@ bool SUART::init(
     _backend->port = _port;
     _backend->latency = latency;
 
-    xTaskCreateUniversal(SUARTBackend, "suartbackend", 3 * 1024, (void*) _backend, configMAX_PRIORITIES - 5, &_task, tskNO_AFFINITY);
+    _usingTask = usingTask;
 
+    if (_usingTask)
+        xTaskCreateUniversal(SUARTBackend, "suartbackend", 3 * 1024, (void*) _backend, configMAX_PRIORITIES - 5, &_task, tskNO_AFFINITY);
+    
     return true;
 }
 
@@ -152,8 +159,11 @@ bool SUART::deinit()
         return false;
     }
 
-    xTaskNotify(_task, BIT(0), eSetBits);
-    _backend = NULL;
+    if (_usingTask)
+    {
+        xTaskNotify(_task, BIT(0), eSetBits);
+        _backend = NULL;
+    }
 
     if (uart_driver_delete(_port) != ESP_OK)
     {
@@ -173,10 +183,17 @@ bool SUART::write(uint8_t* data, unsigned len)
     return true;
 }
 
+bool SUART::write()
+{
+    if (!_backend)
+        return false;
+    send_bytes(_backend);
+    return true;
+}
+
 bool SUART::read()
 {
     if (!_backend)
         return false;
-    recv_bytes(_backend);
-    return true;
+    return recv_bytes(_backend);
 }

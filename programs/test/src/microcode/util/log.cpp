@@ -1,15 +1,25 @@
 #include "log.h"
+#include "mutex.h"
 #include "../hal/hal.h"
 
-static ByteStream* reserves;
+static ByteStream* reserves = NULL;
 static ByteStream* stream = NULL;
-static BinarySemaphore lock = BinarySemaphore();
+static Mutex lock;
+static bool disabled = false;
 
 static void setStream(ByteStream* newStream)
 {
     lock.lock();
-    if (reserves)
-        newStream->put(*reserves);
+    if (reserves && !reserves->isEmpty())
+    {
+        uint8_t buf[128];
+        unsigned pulled;
+        do
+        {
+            pulled = reserves->get(buf, sizeof(buf));
+            newStream->put(buf, pulled);
+        } while (pulled);
+    }
     stream = newStream;
     lock.unlock();
 }
@@ -17,6 +27,12 @@ static void setStream(ByteStream* newStream)
 static void writeDebug(std::streambuf* buf)
 {
     lock.lock();
+    if (disabled)
+    {
+        lock.unlock();
+        return;
+    }
+
     if (stream)
         stream->put(*buf);
     else
@@ -110,4 +126,27 @@ void Log::failed()
 {
     _ss << " -> [ FAILED ]";
     flush();
+}
+
+void Log::disable()
+{
+    lock.lock();
+    if (reserves)
+    {
+        uint8_t buf[128];
+        unsigned pulled;
+        do
+            pulled = reserves->get(buf, sizeof(buf));
+        while (pulled);
+        delete reserves;
+    }
+    disabled = true;
+    lock.unlock();
+}
+
+void Log::enable()
+{
+    lock.lock();
+    disabled = false;
+    lock.unlock();
 }

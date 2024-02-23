@@ -76,7 +76,7 @@ template <class V> class Hash
         void _copy(const Hash& other);
 };
 
-template <class V> class HashInPlace
+template <class V> class StaticHash
 {
     public:
         struct Node
@@ -114,11 +114,11 @@ template <class V> class HashInPlace
                 std::vector<Probe>* _probe;
         };
 
-        HashInPlace(unsigned minSize=-1, float minLoad=0.25f, float maxLoad=0.75f);
-        HashInPlace(const HashInPlace& other);
-        ~HashInPlace();
+        StaticHash(unsigned minSize=-1, float minLoad=0.25f, float maxLoad=0.75f);
+        StaticHash(const StaticHash& other);
+        ~StaticHash();
 
-        void operator=(const HashInPlace& other);
+        void operator=(const StaticHash& other);
 
         V& operator[](unsigned key);
         V* at(unsigned key);
@@ -154,7 +154,7 @@ template <class V> class HashInPlace
         unsigned _hash2(unsigned key);
 
         void _destroy();
-        void _copy(const HashInPlace& other);
+        void _copy(const StaticHash& other);
 };
 
 #include "hash.hpp"

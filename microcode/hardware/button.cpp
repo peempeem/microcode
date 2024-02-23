@@ -1,12 +1,12 @@
 #include "button.h"
 #include "../hal/hal.h"
 
-Button::Button() : BinarySemaphore()
+Button::Button() : Mutex()
 {
 
 }
 
-Button::Button(unsigned pin, bool activeLow, bool recordTaps, unsigned debounce, unsigned multitap) : BinarySemaphore(), pin(pin), recordTaps(recordTaps), debounce(debounce), multitap(multitap)
+Button::Button(unsigned pin, bool activeLow, bool recordTaps, unsigned debounce, unsigned multitap) : Mutex(), pin(pin), recordTaps(recordTaps), debounce(debounce), multitap(multitap)
 {
     pressed = activeLow ? 0 : 1;
     released = activeLow ? 1 : 0;

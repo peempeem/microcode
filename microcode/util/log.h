@@ -1,6 +1,5 @@
 #pragma once
 
-#include "lock.h"
 #include "bytestream.h"
 #include <ostream>
 #include <sstream>
@@ -28,6 +27,9 @@ class Log
 
         void success();
         void failed();
+
+        void disable();
+        void enable();
 
     private:
         std::stringstream _ss;

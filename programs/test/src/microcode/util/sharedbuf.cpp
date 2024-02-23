@@ -3,7 +3,7 @@
 
 SharedBuffer::SharedBuffer() : _buf(NULL)
 {
-
+    
 }
 
 SharedBuffer::SharedBuffer(unsigned bytes)
@@ -21,7 +21,7 @@ SharedBuffer::SharedBuffer(unsigned bytes, uint8_t initializer)
 SharedBuffer::SharedBuffer(const uint8_t* data, unsigned bytes)
 {
     _create(bytes);
-    memcpy(this->data(), data, bytes);
+    memcpy(((SharedBufferData*) _buf)->data, data, bytes);
 }
 
 SharedBuffer::SharedBuffer(const SharedBuffer& other)
@@ -38,6 +38,28 @@ void SharedBuffer::operator=(const SharedBuffer& other)
 {
     _destroy();
     _copy(other);
+}
+
+void SharedBuffer::lock()
+{
+    if (_buf)
+        ((SharedBufferData*) _buf)->lock.lock();
+}
+
+void SharedBuffer::unlock()
+{
+    if (_buf)
+        ((SharedBufferData*) _buf)->lock.unlock();
+}
+
+
+void SharedBuffer::resize(unsigned sz)
+{
+    if (sz != size())
+    {
+        _destroy();
+        _create(sz);
+    }
 }
 
 unsigned SharedBuffer::users() const
@@ -81,8 +103,10 @@ void SharedBuffer::_destroy()
     
     ((SharedBufferData*) _buf)->lock.lock();
     ((SharedBufferData*) _buf)->users -= 1;
+    unsigned users = ((SharedBufferData*) _buf)->users;
     ((SharedBufferData*) _buf)->lock.unlock();
-    if (!((SharedBufferData*) _buf)->users)
+
+    if (!users)
         delete[] _buf;
 }
 

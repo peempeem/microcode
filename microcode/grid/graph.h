@@ -34,7 +34,7 @@ class GridGraph
         };
         
         std::vector<Vertex> _vertices;
-        HashInPlace<uint16_t> _toIDX;
+        StaticHash<uint16_t> _toIDX;
         std::vector<uint16_t> _toID;
 
         Hash<std::vector<DijkstraData>> _data;

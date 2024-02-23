@@ -32,58 +32,60 @@ void USBMessageBroker::send(uint8_t type, uint8_t priority, uint8_t* data, uint1
     _send(type + sizeof(ReservedTypes), priority + 1, data, len);
 }
 
-#include "../util/log.h"
-
 void USBMessageBroker::update()
 {
     if (!_tx || !_rx)
         return;
     
-    _rx->lock();
-    while (!_rx->isEmptyUnlocked())
+    uint8_t buf[128];
+    unsigned pulled;
+    do
     {
-        uint8_t byte = _rx->getUnlocked();
-        if (!_foundHead)
+        pulled = _rx->get(buf, 128);
+        for (unsigned i = 0; i < (unsigned) sizeof(buf); ++i)
         {
-            _buf.insert(byte);
-            if (((Message::Fields::Header*) _buf.data)->hhash == hash32(_buf.data, sizeof(Message::Fields::Header) - sizeof(Message::Fields::Header::hhash)))
+            if (!_foundHead)
             {
-                _rmsg = Message(*((Message::Fields::Header*) _buf.data));
-                _idx = 0;
-                if (_rmsg.dataSize() == 0)
+                _buf.insert(buf[i]);
+                if (((Message::Fields::Header*) _buf.data)->hhash == hash32(_buf.data, sizeof(Message::Fields::Header) - sizeof(Message::Fields::Header::hhash)))
                 {
-                    if (_rmsg.type() < sizeof(ReservedTypes))
-                        _rmsgs.push(_rmsg, _rmsg.priority());
-                    else
+                    _rmsg = Message(*((Message::Fields::Header*) _buf.data));
+                    _idx = 0;
+                    if (_rmsg.dataSize() == 0)
                     {
-                        ((Message::Fields*) _rmsg.raw())->header.type -= sizeof(ReservedTypes);
-                        messages.push(_rmsg, _rmsg.priority());
+                        if (_rmsg.type() < sizeof(ReservedTypes))
+                            _rmsgs.push(_rmsg, _rmsg.priority());
+                        else
+                        {
+                            ((Message::Fields*) _rmsg.raw())->header.type -= sizeof(ReservedTypes);
+                            messages.push(_rmsg, _rmsg.priority());
+                        }
                     }
+                    else
+                        _foundHead = true;                
                 }
-                else
-                    _foundHead = true;                
             }
-        }
-        else
-        {
-            _rmsg.data()[_idx++] = byte;
-            if (_idx >= _rmsg.dataSize())
+            else
             {
-                if (((Message::Fields*) _rmsg.raw())->header.dhash == hash32(_rmsg.data(), _rmsg.dataSize()))
+                _rmsg.data()[_idx++] = buf[i];
+                if (_idx >= _rmsg.dataSize())
                 {
-                    if (_rmsg.type() < sizeof(ReservedTypes))
-                        _rmsgs.push(_rmsg, _rmsg.priority());
-                    else
+                    if (((Message::Fields*) _rmsg.raw())->header.dhash == hash32(_rmsg.data(), _rmsg.dataSize()))
                     {
-                        ((Message::Fields*) _rmsg.raw())->header.type -= sizeof(ReservedTypes);
-                        messages.push(_rmsg, _rmsg.priority());
+                        if (_rmsg.type() < sizeof(ReservedTypes))
+                            _rmsgs.push(_rmsg, _rmsg.priority());
+                        else
+                        {
+                            ((Message::Fields*) _rmsg.raw())->header.type -= sizeof(ReservedTypes);
+                            messages.push(_rmsg, _rmsg.priority());
+                        }
                     }
+                    _foundHead = false;
                 }
-                _foundHead = false;
-            }
+            } 
         }
-    }
-    _rx->unlock();
+        
+    } while (pulled);
 
     while (_rmsgs.size())
     {
@@ -99,13 +101,11 @@ void USBMessageBroker::update()
         _rmsgs.pop();
     }
 
-    _tx->lock();
     while (_smsgs.size())
     {
-        _tx->putUnlocked(_smsgs.top().raw(), _smsgs.top().size());
+        _tx->put(_smsgs.top().raw(), _smsgs.top().size());
         _smsgs.pop();
     }
-    _tx->unlock();
 }
 
 void USBMessageBroker::_send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len)

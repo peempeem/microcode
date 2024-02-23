@@ -85,7 +85,7 @@ bool GridPacket::isDead()
 //// PacketPriorityQueue Class
 //
 
-PacketPriorityQueue::PacketPriorityQueue() : MinPriorityQueue<GridPacket>(), SpinLock()
+PacketPriorityQueue::PacketPriorityQueue() : MinPriorityQueue<GridPacket>(), Mutex()
 {
 
 }

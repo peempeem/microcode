@@ -54,8 +54,9 @@ template <class V> typename Hash<V>::Itterator& Hash<V>::Itterator::operator++()
 
 template <class V> typename Hash<V>::Itterator Hash<V>::Itterator::operator++(int)
 {
+    unsigned idx = _idx;
     while (_idx < _table->size() && !(*_table)[++_idx]);
-    return Itterator(_idx, _table);
+    return Itterator(idx, _table);
 }
 
 template <class V> bool Hash<V>::Itterator::operator!=(const Itterator& other) const
@@ -347,65 +348,65 @@ template <class V> void Hash<V>::_copy(const Hash& other)
 }
 
 //
-//// HashInPlace<V>::Node Class
+//// StaticHash<V>::Node Class
 //
 
-template <class V> HashInPlace<V>::Node::Node()
+template <class V> StaticHash<V>::Node::Node()
 {
 
 }
 
-template <class V> HashInPlace<V>::Node::Node(unsigned key, const V& value) : key(key), value(value)
+template <class V> StaticHash<V>::Node::Node(unsigned key, const V& value) : key(key), value(value)
 {
 
 }
 
 //
-//// HashInPlace<V>::Itterator Class
+//// StaticHash<V>::Itterator Class
 //
 
-template <class V> HashInPlace<V>::Itterator::Itterator(unsigned idx, std::vector<Node>* table, std::vector<Probe>* probe) : _idx(idx), _table(table), _probe(probe)
+template <class V> StaticHash<V>::Itterator::Itterator(unsigned idx, std::vector<Node>* table, std::vector<Probe>* probe) : _idx(idx), _table(table), _probe(probe)
 {
 
 }
 
-template <class V> V& HashInPlace<V>::Itterator::operator*()
+template <class V> V& StaticHash<V>::Itterator::operator*()
 {
     return (*_table)[_idx].value;
 }
 
-template <class V> typename HashInPlace<V>::Itterator& HashInPlace<V>::Itterator::operator++()
+template <class V> typename StaticHash<V>::Itterator& StaticHash<V>::Itterator::operator++()
 {
     while (_idx < _table->size() && !(*_probe)[++_idx].used);
     return *this;
 }
 
-template <class V> typename HashInPlace<V>::Itterator HashInPlace<V>::Itterator::operator++(int)
+template <class V> typename StaticHash<V>::Itterator StaticHash<V>::Itterator::operator++(int)
 {
     while (_idx < _table->size() && !(*_probe)[++_idx].used);
     return Itterator(_idx, _table);
 }
 
-template <class V> bool HashInPlace<V>::Itterator::operator!=(const Itterator& other) const
+template <class V> bool StaticHash<V>::Itterator::operator!=(const Itterator& other) const
 {
     return _idx != other._idx;
 }
 
-template <class V> unsigned HashInPlace<V>::Itterator::key() const
+template <class V> unsigned StaticHash<V>::Itterator::key() const
 {
     return (*_table)[_idx].key; 
 }
 
-template <class V> unsigned HashInPlace<V>::Itterator::idx() const
+template <class V> unsigned StaticHash<V>::Itterator::idx() const
 {
     return _idx; 
 }
 
 //
-//// HashInPlace<V> Class
+//// StaticHash<V> Class
 //
 
-template <class V> HashInPlace<V>::HashInPlace(unsigned minSize, float minLoad, float maxLoad) : _size(0)
+template <class V> StaticHash<V>::StaticHash(unsigned minSize, float minLoad, float maxLoad) : _size(0)
 {
     _minLoad = (minLoad < 0 || minLoad > 0.5f) ? 0.25f : minLoad;
     _maxLoad = (maxLoad < _minLoad || maxLoad > 1) ? 0.75f : maxLoad;
@@ -427,23 +428,23 @@ template <class V> HashInPlace<V>::HashInPlace(unsigned minSize, float minLoad, 
     _probe = new std::vector<Probe>(primes[_prime]);
 }
 
-template <class V> HashInPlace<V>::HashInPlace(const HashInPlace<V>& other)
+template <class V> StaticHash<V>::StaticHash(const StaticHash<V>& other)
 {
     _copy(other);
 }
 
-template <class V> HashInPlace<V>::~HashInPlace()
+template <class V> StaticHash<V>::~StaticHash()
 {
     _destroy();
 }
 
-template <class V> void HashInPlace<V>::operator=(const HashInPlace& other)
+template <class V> void StaticHash<V>::operator=(const StaticHash& other)
 {
     _destroy();
     _copy(other);
 }
 
-template <class V> V& HashInPlace<V>::operator[](unsigned key)
+template <class V> V& StaticHash<V>::operator[](unsigned key)
 {
     unsigned idx = _contains(key);
     if (idx != (unsigned) -1)
@@ -451,7 +452,7 @@ template <class V> V& HashInPlace<V>::operator[](unsigned key)
     return _insert(key, V());
 }
 
-template <class V> V* HashInPlace<V>::at(unsigned key)
+template <class V> V* StaticHash<V>::at(unsigned key)
 {
     unsigned idx = _contains(key);
     if (idx != (unsigned) -1)
@@ -459,19 +460,19 @@ template <class V> V* HashInPlace<V>::at(unsigned key)
     return NULL;
 }
 
-template <class V> void HashInPlace<V>::remove(unsigned key, bool canResize)
+template <class V> void StaticHash<V>::remove(unsigned key, bool canResize)
 {
     unsigned idx = _contains(key);
     if (idx != (unsigned) -1)
         _remove(idx, canResize);
 }
 
-template <class V> void HashInPlace<V>::remove(const Itterator& it, bool canResize)
+template <class V> void StaticHash<V>::remove(const Itterator& it, bool canResize)
 {
     _remove(it.idx(), canResize);
 }
 
-template <class V> void HashInPlace<V>::reserve(unsigned size)
+template <class V> void StaticHash<V>::reserve(unsigned size)
 {
     if (size < _size)
         return;
@@ -483,7 +484,7 @@ template <class V> void HashInPlace<V>::reserve(unsigned size)
     _realloc(prime);
 }
 
-template <class V> void HashInPlace<V>::shrink()
+template <class V> void StaticHash<V>::shrink()
 {
     unsigned newPrime = _prime;
     while (newPrime > 2 && newPrime > _minPrime && _size < primes[newPrime] * _minLoad)
@@ -491,7 +492,7 @@ template <class V> void HashInPlace<V>::shrink()
     _realloc(newPrime);
 }
 
-template <class V> void HashInPlace<V>::clear()
+template <class V> void StaticHash<V>::clear()
 {
     _size = 0;
     _prime = _minPrime;
@@ -499,27 +500,27 @@ template <class V> void HashInPlace<V>::clear()
     *_probe = std::vector<bool>(primes[_prime], false);
 }
 
-template <class V> bool HashInPlace<V>::contains(unsigned key)
+template <class V> bool StaticHash<V>::contains(unsigned key)
 {
     return _contains(key) != (unsigned) -1;
 }
 
-template <class V> bool HashInPlace<V>::empty()
+template <class V> bool StaticHash<V>::empty()
 {
     return _size == 0;
 }
 
-template <class V> unsigned HashInPlace<V>::size()
+template <class V> unsigned StaticHash<V>::size()
 {
     return _size;
 }
 
-template <class V> unsigned HashInPlace<V>::containerSize()
+template <class V> unsigned StaticHash<V>::containerSize()
 {
     return _table->size();
 }
 
-template <class V> typename HashInPlace<V>::Itterator HashInPlace<V>::begin()
+template <class V> typename StaticHash<V>::Itterator StaticHash<V>::begin()
 {
     for (unsigned i = 0; i < _probe->size(); i++)
     {
@@ -529,12 +530,12 @@ template <class V> typename HashInPlace<V>::Itterator HashInPlace<V>::begin()
     return end();
 }
 
-template <class V> typename HashInPlace<V>::Itterator HashInPlace<V>::end()
+template <class V> typename StaticHash<V>::Itterator StaticHash<V>::end()
 {
     return Itterator(_probe->size(), _table, _probe);
 }
 
-template <class V> V& HashInPlace<V>::_insert(unsigned key, const V& value)
+template <class V> V& StaticHash<V>::_insert(unsigned key, const V& value)
 {
     if (_size + 1 > _table->size() * _maxLoad)
         _realloc(_prime + 2);
@@ -560,7 +561,7 @@ template <class V> V& HashInPlace<V>::_insert(unsigned key, const V& value)
     return _insert(key, value);
 }
 
-template <class V> void HashInPlace<V>::_remove(unsigned idx, bool canResize)
+template <class V> void StaticHash<V>::_remove(unsigned idx, bool canResize)
 {
     (*_table)[idx] = Node();
     (*_probe)[idx].used = 0;
@@ -573,7 +574,7 @@ template <class V> void HashInPlace<V>::_remove(unsigned idx, bool canResize)
     }
 }
 
-template <class V> void HashInPlace<V>::_realloc(unsigned newPrime)
+template <class V> void StaticHash<V>::_realloc(unsigned newPrime)
 {
     if (_prime == newPrime)
         return;
@@ -613,7 +614,7 @@ template <class V> void HashInPlace<V>::_realloc(unsigned newPrime)
     _probe = probe;
 }
 
-template <class V> unsigned HashInPlace<V>::_contains(unsigned key)
+template <class V> unsigned StaticHash<V>::_contains(unsigned key)
 {
     unsigned start = _hash1(key);
     unsigned h2 = _hash2(key);
@@ -630,23 +631,23 @@ template <class V> unsigned HashInPlace<V>::_contains(unsigned key)
     return (unsigned) -1;
 }
 
-template <class V> unsigned HashInPlace<V>::_hash1(unsigned key)
+template <class V> unsigned StaticHash<V>::_hash1(unsigned key)
 {
     return key % primes[_prime];
 }
 
-template <class V> unsigned HashInPlace<V>::_hash2(unsigned key)
+template <class V> unsigned StaticHash<V>::_hash2(unsigned key)
 {
     return primes[_prime - 1] - (key % primes[_prime - 1]);
 }
 
-template <class V> void HashInPlace<V>::_destroy()
+template <class V> void StaticHash<V>::_destroy()
 {
     delete _table;
     delete _probe;
 }
 
-template <class V> void HashInPlace<V>::_copy(const HashInPlace& other)
+template <class V> void StaticHash<V>::_copy(const StaticHash& other)
 {
     _minLoad = other._minLoad;
     _maxLoad = other._maxLoad;
