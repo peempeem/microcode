@@ -36,15 +36,19 @@ bool recv_bytes(SUART::BackendData* backend)
     uint8_t buf[BUF_SLICE];
     backend->read.lock();
     uart_get_buffered_data_len(backend->port, &bufSize);
+    if (!bufSize)
+    {
+        backend->read.unlock();
+        return false;
+    }
     while (bufSize)
     {
         unsigned pulled = uart_read_bytes(backend->port, buf, min((int) bufSize, BUF_SLICE), 0);
         backend->rx.put(buf, pulled);
         uart_get_buffered_data_len(backend->port, &bufSize);
     }
-    bool ret = !backend->rx.isEmpty();
     backend->read.unlock();
-    return ret;
+    return true;
 }
 
 void SUARTBackend(void* args)

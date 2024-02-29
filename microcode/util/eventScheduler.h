@@ -12,6 +12,7 @@ class EventScheduler
         EventScheduler();
 
         bool has(unsigned event);
+        bool isEmpty();
         void schedule(unsigned event, unsigned ms, bool overwrite=false);
         void update();
     

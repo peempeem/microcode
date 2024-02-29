@@ -13,7 +13,7 @@ PVar<WiFiData> wdata("/wifi");
 
 char* ssid = "softwater";
 char* pass = "softwater";
-char* host = "module4";
+char* host = "module7";
 
 void setup()
 {

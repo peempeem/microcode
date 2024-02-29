@@ -253,6 +253,7 @@ void GridMessageHub::update()
                         if (td->sender == _id)
                         {
                             _kill(_id);
+                            Log("hub") << "new id by kill";
                             _newID();
                         }
                         break;

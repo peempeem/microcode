@@ -253,6 +253,7 @@ void GridMessageHub::update()
                         if (td->sender == _id)
                         {
                             _kill(_id);
+                            Log("hub") << "new id by kill";
                             _newID();
                         }
                         break;
@@ -360,23 +361,16 @@ void GridMessageHub::update()
         it->second->lock();
         if (it->second->canWrite(_id))
         {
-            unsigned ss = it->second->serialSize(_id);
-            GridMessage msg((int) NetworkMessages::SharedMessage, 1, ss);
+            GridMessage msg((int) NetworkMessages::SharedMessage, it->second->priority(), it->second->serialSize(_id));
             uint8_t* ptr = msg.data();
             ptr += it->second->serializeName(ptr);
             ptr += it->second->serializeIDS(ptr, _id);
 
-            it->second->preen();
-            it->second->unlock();
-
             for (unsigned i = 0; i < _ios.size(); ++i)
                 _sendBranch(msg, i, 0, 0);
         }
-        else
-        {
-            it->second->preen();
-            it->second->unlock();
-        }
+        it->second->preen();
+        it->second->unlock();
     }
     
     // send table broadcast

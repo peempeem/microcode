@@ -10,6 +10,11 @@ bool EventScheduler::has(unsigned event)
     return _trackedEvents.contains(event);
 }
 
+bool EventScheduler::isEmpty()
+{
+    return _trackedEvents.empty() && currentEvents.empty();
+}
+
 void EventScheduler::schedule(unsigned event, unsigned ms, bool overwrite)
 {
     if (!overwrite && _trackedEvents.contains(event))
@@ -21,10 +26,11 @@ void EventScheduler::update()
 {
     for (auto it = _trackedEvents.begin(); it != _trackedEvents.end(); ++it)
     {
-        if ((*it).isRinging())
+        if (it->isRinging())
         {
-            _trackedEvents.remove(it.key());
             currentEvents.push(it.key());
+            _trackedEvents.remove(it);
         }
     }
+    _trackedEvents.shrink();
 }

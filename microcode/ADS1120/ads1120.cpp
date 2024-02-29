@@ -24,6 +24,7 @@ bool ADS1120::begin()
     reset();
     _sendCommand(CMD_START_SYNC);
 
+    _initialized = true;
     Registers reg = _readReg(0);
     reg.reg0.gain_config = Gain64;
     _writeReg(0, reg);
@@ -35,7 +36,7 @@ bool ADS1120::begin()
         _writeReg(0, reg);
         return true;
     }
-
+    _initialized = false;
     return false;
 }
 

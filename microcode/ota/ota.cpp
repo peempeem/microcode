@@ -2,6 +2,7 @@
 #include "../util/log.h"
 #include "../util/pvar.h"
 #include "../util/timer.h"
+#include "../util/mutex.h"
 #include <WebServer.h>
 #include <Update.h>
 
@@ -10,10 +11,12 @@ const char* safeModeFile = "/_safemode.bin";
 const char* rootHTML = "<html><form method='POST' action='/ota/update' enctype='multipart/form-data'><input type='file' name='update'><input type='submit' value='Update'></form></html>";
 const char* updateHTML = "<html><p>update successful</p><form action='/ota/'><input type='submit' value='return'/></form></html>";
 static WebServer server;
+static Mutex lock;
 static volatile int updateSize = -1;
 static volatile bool running = false;
 static volatile bool safeMode = false;
 static volatile bool rebooting = false;
+static volatile uint64_t rebootTime;
 
 PACK(struct SafeMode
 {
@@ -24,17 +27,6 @@ PACK(struct SafeMode
 });
 
 static PVar<SafeMode> smvar(safeModeFile);
-
-// reboots in 1 second unless aborted through task notification
-void reboot(void* args)
-{
-    uint32_t notification = 0;
-    xTaskNotifyWait(0, UINT32_MAX, &notification, 1000 / portTICK_PERIOD_MS);
-    
-    if (notification & BIT(0))
-        vTaskDelete(NULL);
-    ESP.restart();
-}
 
 // backend server updater thread
 void update(void* args)
@@ -47,12 +39,17 @@ void update(void* args)
         xTaskNotifyWait(0, UINT32_MAX, &notification, 1 / portTICK_PERIOD_MS);
         server.handleClient();
 
+        lock.lock();
         if (safeMode && !bootSuccess && t.isRinging())
         {
             smvar.data.bootSuccesses++;
             smvar.save();
             bootSuccess = true;
         }
+
+        if (rebooting && sysTime() >= rebootTime)
+            esp_restart();
+        lock.unlock();
 
         // kill task if notified
         if (notification & BIT(0))
@@ -82,26 +79,32 @@ void onUpdateUpdater()
     }
     else if (upload.status == UPLOAD_FILE_WRITE)
     {
+        lock.lock();
         updateSize = upload.totalSize;
+        lock.unlock();
         Update.write(upload.buf, upload.currentSize);
         Log(LOG_HEADER) << "Update size: " << updateSize;
     }
     else if (upload.status == UPLOAD_FILE_END)
     {
-        xTaskCreateUniversal(reboot, "reboot", 1024, NULL, configMAX_PRIORITIES, NULL, tskNO_AFFINITY);
         Update.end(true);
+        lock.lock();
         if (safeMode)
         {
             smvar.data = SafeMode();
             smvar.save();  
         }
         updateSize = -1;
+        rebootTime = sysTime() + (unsigned) 1e6;
         rebooting = true;
+        lock.unlock();
         Log(LOG_HEADER) << "Update complete. Rebooting shortly ...";
     }
     else if (upload.status == UPLOAD_FILE_ABORTED)
     {
+        lock.lock();
         updateSize = -1;
+        lock.unlock();
         Log(LOG_HEADER) << "Update aborted";
     }
 }
@@ -116,8 +119,13 @@ void onUpdateSize()
 
 unsigned OTAUpdater::init(unsigned port, bool safemode)
 {
+    lock.lock();
     if (running)
+    {
+        lock.unlock();
         return port;
+    }
+        
     running = true;
     safeMode = safemode;
 
@@ -133,7 +141,7 @@ unsigned OTAUpdater::init(unsigned port, bool safemode)
 
     // start server
     server.begin();
-    xTaskCreateUniversal(update, "ota_backend", 4 * 1024, NULL, configMAX_PRIORITIES - 2, NULL, tskNO_AFFINITY);
+    xTaskCreateUniversal(update, "ota_backend", 4 * 1024, NULL, 20, NULL, tskNO_AFFINITY);
 
     Log(LOG_HEADER) << "Update Server started";
 
@@ -159,7 +167,7 @@ unsigned OTAUpdater::init(unsigned port, bool safemode)
                 Timer t(smvar.data.bootTimeout);
                 while (!t.isRinging());
 
-                if (!rebooting && updateSize == -1)
+                if (!isRebooting() || !isUpdating())
                 {
                     Log(LOG_HEADER) << "No update received. Proceeding with normal boot";
                     break;
@@ -170,15 +178,22 @@ unsigned OTAUpdater::init(unsigned port, bool safemode)
             smvar.save(); 
     }
 
+    lock.unlock();
     return port;
 }
 
 bool OTAUpdater::isUpdating()
 {
-    return updateSize != -1;
+    lock.lock();
+    bool ret = updateSize != -1;
+    lock.unlock();
+    return ret;
 }
 
 bool OTAUpdater::isRebooting()
 {
-    return rebooting;
+    lock.lock();
+    bool ret = rebooting;
+    lock.unlock();
+    return ret;
 }

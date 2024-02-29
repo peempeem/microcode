@@ -11,15 +11,14 @@
 #include <WiFi.h>
 #include <ESPmDNS.h>
 
-Rate                debugMem(10);
+Rate                debugMem(4);
 Rate                hubPost(1);
-Rate                robotStatePost(200);
+Rate                robotStatePost(100);
 
 SPIClass            spiBus(VSPI);
 MCP23S08            mcp(spiBus, MCP_CS, MCP_RST);
 ADS1120             adc(spiBus, ADC_CS, ADC_DRDY);
 Adafruit_BNO08x     imu(IMU_RST);
-Adafruit_NeoPixel   pixles(NUM_PXL, PXL_PIN, NEO_GRB + NEO_KHZ800);
 
 PVar<WiFiData>      wifiData("/wifi");
 
@@ -34,7 +33,7 @@ void setup()
 {
     Log("init") << "Begin initialization...";
 
-    if (suart0.init(500000))
+    if (suart0.init(1000000))
     {
         Log() >> *suart0.getTXStream();
         ss.init.debug = 1;
@@ -55,6 +54,128 @@ void setup()
         Log("init") << filesys.toString();
         ss.init.filesys = 1;
     }
+
+    pinMode(MCP_CS, OUTPUT);
+    pinMode(ADC_CS, OUTPUT);
+    pinMode(IMU_CS, OUTPUT);
+    digitalWrite(MCP_CS, HIGH);
+    digitalWrite(ADC_CS, HIGH);
+    digitalWrite(IMU_CS, HIGH);
+    spiBus.begin();
+
+    for (unsigned i = 0; i < 10; ++i) 
+    {
+        Log log("init");
+        log << "MCP GPIO Extender Attempt " << i;
+        if (!mcp.begin())
+            log.failed();
+        else
+        {
+            for (unsigned i = 0; i < 8; i++)
+                mcp.setMode(i, OUTPUT);
+            log.success();
+            ss.init.mcp = 1;
+            break;
+        }
+    }
+    
+    for (unsigned i = 0; i < 10; ++i)
+    {
+        Log log("init");
+        log << "ADS1120 ADC Attempt " << i;
+        if (!adc.begin())
+            log.failed();
+        else
+        {
+            adc.setGain(ADS1120::Gain1);
+            adc.setDataRate(ADS1120::T2000);
+            adc.setVoltageRef(ADS1120::External_REFP0_REFN0); 
+            adc.setMux(ADS1120::AIN0_AVSS);
+            adc.setConversionMode(ADS1120::Continuous);
+            log.success();
+            ss.init.adc = 1;
+            break;
+        }
+    }
+    
+    for (unsigned i = 0; i < 10; ++i)
+    {
+        Log log("init");
+        log << "BNO085 IMU Attempt " << i;
+        if (!imu.begin_SPI(IMU_CS, IMU_INT, &spiBus))
+            log.failed();
+        else
+        {
+            log.success();
+            ss.init.imu = 1;
+            break;
+        }
+    }
+
+    //if (strcmp(wifiData.data.host, "module3") == 0)
+    {
+        Log log("init");
+        log << "Comm 0";
+        if (!suart1.init(COMM_BAUD, RX0, TX0, false))
+            log.failed();
+        else
+        {
+            log.success();
+            ss.init.comm0 = 1;
+
+            xTaskCreateUniversal(
+                transferPackets, 
+                "pktTrans0", 
+                4 * 1024, 
+                (void*) new TransferPacketArgs(&hub, 0, &suart1), 
+                15, 
+                NULL, 
+                tskNO_AFFINITY);
+        }
+    }
+
+    //if (strcmp(wifiData.data.host, "module2") == 0)
+    {
+        Log log("init");
+        log << "Comm 1";
+        if (!suart2.init(COMM_BAUD, RX1, TX1, false))
+            log.failed();
+        else
+        {
+            log.success();
+            ss.init.comm0 = 1;
+
+            xTaskCreateUniversal(
+                transferPackets, 
+                "pktTrans1", 
+                4 * 1024, 
+                (void*) new TransferPacketArgs(&hub, 1, &suart2), 
+                15, 
+                NULL, 
+                tskNO_AFFINITY);
+        }
+    }
+
+    hub.setLinkSpeed(0, COMM_BAUD);
+    hub.setLinkSpeed(1, COMM_BAUD);
+    hub.listenFor(robotState);
+    xTaskCreateUniversal(
+        updateHub, 
+        "updateHub", 
+        6 * 1024, 
+        (void*) &hub, 
+        10, 
+        NULL, 
+        tskNO_AFFINITY);
+
+    xTaskCreateUniversal(
+    runPixels, 
+    "runPixels", 
+    4 * 1024, 
+    NULL, 
+    15, 
+    NULL, 
+    tskNO_AFFINITY);
 
     {
         Log log("init");
@@ -85,114 +206,6 @@ void setup()
         else
             log.failed();
     }
-
-    xTaskCreateUniversal(
-        runPixels, 
-        "runPixels", 
-        8 * 1024, 
-        NULL, 
-        1, 
-        NULL, 
-        tskNO_AFFINITY);
-
-    spiBus.begin();
-
-    {
-        Log log("init");
-        log << "MCP GPIO Extender";
-        if (!mcp.begin())
-            log.failed();
-        else
-        {
-            for (unsigned i = 0; i < 8; i++)
-                mcp.setMode(i, OUTPUT);
-            log.success();
-            ss.init.mcp = 1;
-        }
-    }
-    
-    {
-        Log log("init");
-        log << "ADS1120 ADC";
-        if (!adc.begin())
-            log.failed();
-        else
-        {
-            adc.setGain(ADS1120::Gain1);
-            adc.setDataRate(ADS1120::T2000);
-            adc.setVoltageRef(ADS1120::External_REFP0_REFN0); 
-            adc.setMux(ADS1120::AIN0_AVSS);
-            adc.setConversionMode(ADS1120::Continuous);
-            log.success();
-            ss.init.adc = 1;
-        }
-    }
-    
-    {
-        Log log("init");
-        log << "BNO085 IMU";
-        if (!imu.begin_SPI(IMU_CS, IMU_INT, &spiBus))
-            log.failed();
-        else
-        {
-            log.success();
-            ss.init.imu = 1;
-        }
-    }
-
-    {
-        Log log("init");
-        log << "Comm 0";
-        if (!suart1.init(COMM_BAUD, RX0, TX0, false))
-            log.failed();
-        else
-        {
-            log.success();
-            ss.init.comm0 = 1;
-
-            xTaskCreateUniversal(
-                transferPackets, 
-                "pktTrans0", 
-                8 * 1024, 
-                (void*) new TransferPacketArgs(&hub, 0, &suart1), 
-                15, 
-                NULL, 
-                1);
-        }
-    }
-
-    {
-        Log log("init");
-        log << "Comm 1";
-        if (!suart2.init(COMM_BAUD, RX1, TX1, false))
-            log.failed();
-        else
-        {
-            log.success();
-            ss.init.comm0 = 1;
-
-            xTaskCreateUniversal(
-                transferPackets, 
-                "pktTrans1", 
-                8 * 1024, 
-                (void*) new TransferPacketArgs(&hub, 1, &suart2), 
-                15, 
-                NULL, 
-                1);
-        }
-    }
-
-    hub.setLinkSpeed(0, COMM_BAUD);
-    hub.setLinkSpeed(1, COMM_BAUD);
-    hub.listenFor(robotState);
-    xTaskCreateUniversal(
-        updateHub, 
-        "updateHub", 
-        12 * 1024, 
-        (void*) &hub, 
-        10, 
-        NULL, 
-        1);
     
     Log("init") << "Initialization complete";
 }
@@ -221,7 +234,10 @@ void loop()
     adc.setMux(adcReadPin + ADS1120::AIN0_AVSS);
 
     if (debugMem.isReady())
+    {
         Log("MemoryUsage") << sysMemUsage();
+        Log("MemoryUsageExt") << sysMemUsageExternal();
+    }
     
     if (hubPost.isReady())
     {
@@ -232,6 +248,42 @@ void loop()
         hub._lock.unlock();
         Log("freee") << ESP.getMinFreeHeap();
     }
+
+    if (robotStatePost.isReady())
+    {
+        robotState.lock();
+        SharedBuffer& buf = robotState.touch(hub.id());
+        buf.resize(sizeof(StageState));
+        memcpy(buf.data(), (uint8_t*) &ss, sizeof(StageState));
+        robotState.unlock();
+    }
+
+    // if (strcmp(wifiData.data.host, "module3") == 0)
+    // {
+    //     hub[1].out.lock();
+    //     while (!hub[1].out.empty())
+    //         hub[1].out.pop();
+    //     hub[1].out.unlock();
+    // }
+
+    // if (strcmp(wifiData.data.host, "module2") == 0)
+    // {
+    //     hub[0].out.lock();
+    //     while (!hub[0].out.empty())
+    //         hub[0].out.pop();
+    //     hub[0].out.unlock();
+    // }
+
+    robotState.lock();
+    for (auto it = robotState.data.begin(); it != robotState.data.end(); ++it)
+    {
+        if (robotState.canRead(it.key()) && it.key() != hub.id())
+        {
+            StageState* sss = (StageState*) it->buf.data();
+            Log("robotState") << "id: " << it.key() << " pyr:\t" << sss->sensors.ypr.pitch << "\t" << sss->sensors.ypr.yaw << "\t" << sss->sensors.ypr.roll << "\tpress:\t" << sss->sensors.pressure[0] << "\t" << sss->sensors.pressure[1] << "\t" << sss->sensors.pressure[2] << "\t" << sss->sensors.pressure[3];
+        }
+    }
+    robotState.unlock();
 
     // if (suart1.read())
     // {
@@ -298,15 +350,6 @@ void loop()
     // hub[1].out.unlock();
     
     // hub.update();
-
-    if (robotStatePost.isReady())
-    {
-        robotState.lock();
-        SharedBuffer& buf = robotState.touch(hub.id());
-        buf.resize(sizeof(StageState));
-        memcpy(buf.data(), (uint8_t*) &ss, sizeof(StageState));
-        robotState.unlock();
-    }
 
     // while (usb.messages.size())
     // {

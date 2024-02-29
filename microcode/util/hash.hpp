@@ -48,14 +48,14 @@ template <class V> V* Hash<V>::Itterator::operator->()
 
 template <class V> typename Hash<V>::Itterator& Hash<V>::Itterator::operator++()
 {
-    while (_idx < _table->size() && !(*_table)[++_idx]);
+    while (++_idx < _table->size() && !(*_table)[_idx]);
     return *this;
 }
 
 template <class V> typename Hash<V>::Itterator Hash<V>::Itterator::operator++(int)
 {
     unsigned idx = _idx;
-    while (_idx < _table->size() && !(*_table)[++_idx]);
+    while (++_idx < _table->size() && !(*_table)[_idx]);
     return Itterator(idx, _table);
 }
 
@@ -200,7 +200,7 @@ template <class V> unsigned Hash<V>::containerSize()
 
 template <class V> typename Hash<V>::Itterator Hash<V>::begin()
 {
-    for (unsigned i = 0; i < _table->size(); i++)
+    for (unsigned i = 0; i < _table->size(); ++i)
     {
         if ((*_table)[i])
             return Itterator(i, _table);
@@ -377,14 +377,15 @@ template <class V> V& StaticHash<V>::Itterator::operator*()
 
 template <class V> typename StaticHash<V>::Itterator& StaticHash<V>::Itterator::operator++()
 {
-    while (_idx < _table->size() && !(*_probe)[++_idx].used);
+    while (++_idx < _table->size() && !(*_probe)[_idx].used);
     return *this;
 }
 
 template <class V> typename StaticHash<V>::Itterator StaticHash<V>::Itterator::operator++(int)
 {
-    while (_idx < _table->size() && !(*_probe)[++_idx].used);
-    return Itterator(_idx, _table);
+    unsigned idx = _idx;
+    while (++_idx < _table->size() && !(*_table)[_idx]);
+    return Itterator(idx, _table);
 }
 
 template <class V> bool StaticHash<V>::Itterator::operator!=(const Itterator& other) const

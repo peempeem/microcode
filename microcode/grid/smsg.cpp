@@ -14,25 +14,25 @@ const std::string& SharedGridBuffer::name()
     return _name;
 }
 
+unsigned SharedGridBuffer::priority()
+{
+    return _priority;
+}
+
 SharedBuffer& SharedGridBuffer::touch(unsigned id)
 {
     Extras& ex = data[id];
     ex.arrival = sysTime();
     ex.send.time = ex.arrival;
-    ex.write = true;
-    ex.read = true;
+    ex.read = false;
+    ex.written = true;
     return ex.buf;
 }
 
 bool SharedGridBuffer::canWrite(unsigned id)
 {
     Extras* ex = data.at(id);
-    if (ex && ex->write)
-    {
-        ex->write = false;
-        return true;
-    }
-    return false;
+    return ex && ex->written;
 }
 
 bool SharedGridBuffer::canRead(unsigned id)
@@ -170,7 +170,7 @@ unsigned SharedGridBuffer::deserializeIDS(uint8_t* ptr)
 
         if (send.time > ex.send.time)
         {
-            ex.write = false;
+            ex.written = false;
             ex.read = true;
             ex.arrival = sysTime();
             ex.send = send;

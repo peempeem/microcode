@@ -27,7 +27,7 @@
 #define ADC_REF 5
 #define ADC_PORTS 4
 #define IMU_REPORT 5000
-#define PIXEL_REFERESH_PERIOD (unsigned) (1000 / 60.0f)
+#define PIXEL_REFERESH_PERIOD (1000 / 60)
 #define DEBUG_BAUD  115200
 #define COMM_BAUD (unsigned) 5e6
 uint8_t driverMap[] = { 1, 0, 3, 2, 5, 4, 7, 6 };

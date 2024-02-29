@@ -5,6 +5,7 @@
 #include "microcode/util/timer.h"
 #include "microcode/ota/ota.h"
 #include "microcode/grid/hub.h"
+#include "microcode/util/eventScheduler.h"
 #include "defines.h"
 #include "types.h"
 
@@ -24,64 +25,104 @@ void runPixels(void* args)
 
     enum State
     {
+        START,
         IDLE,
         UPDATING,
+        UPDATING_CHECK,
         REBOOTING1,
         REBOOTING2
     } state;
 
-    Timer t;
+    EventScheduler sched;
 
     while (true)
     {
         xTaskNotifyWait(0, UINT32_MAX, &notification, PIXEL_REFERESH_PERIOD / portTICK_PERIOD_MS);
+        
+        if (sched.isEmpty())
+        {
+            if (ota.isUpdating())
+            {
+                if (state != UPDATING)
+                    sched.schedule(UPDATING, 0);
+            }
+            else if (state != IDLE)
+                sched.schedule(IDLE, 0);
+        }
+        
+        sched.update();
+        
+        while (!sched.currentEvents.empty())
+        {
+           switch (sched.currentEvents.front())
+           {
+                case IDLE:
+                {
+                    r.rate.setHertz(1);
+                    g.rate.setHertz(2);
+                    b.rate.setHertz(3);
+                    r.max = 255;
+                    g.max = 255;
+                    b.max = 255;
+                    r.offset = 0.1f;
+                    g.offset = 0.1f;
+                    b.offset = 0.1f;
+                    state = IDLE;
+                    break;
+                }
 
-        if (ota.isUpdating() && state != UPDATING)
-        {
-            r.rate.setHertz(1);
-            g.rate.setHertz(1);
-            b.rate.setHertz(1);
-            r.max = 255;
-            g.max = 95;
-            b.max = 5;
-            r.offset = 0;
-            g.offset = 0;
-            b.offset = 0;
-            state = IDLE;
-        }
-        else if (ota.isRebooting() && state != REBOOTING1)
-        {
-            r.rate.setHertz(4);
-            g.rate.setHertz(4);
-            b.rate.setHertz(4);
-            r.max = 65;
-            g.max = 139;
-            b.max = 255;
-            r.offset = 0;
-            g.offset = 0;
-            b.offset = 0;
-            t = Timer(750);
-            state = REBOOTING1;
-        }
-        else if (state == REBOOTING1 && t.isRinging())
-        {
-            r.max = 0;
-            g.max = 0;
-            b.max = 0;
-            state = REBOOTING2;
-        }
-        else if (!ota.isUpdating() && !ota.isRebooting() && state != IDLE)
-        {
-            r.rate.setHertz(1);
-            g.rate.setHertz(2);
-            b.rate.setHertz(3);
-            r.max = 255;
-            g.max = 255;
-            b.max = 255;
-            r.offset = 0.1f;
-            g.offset = 0.1f;
-            b.offset = 0.1f;
-            state = IDLE;
+                case UPDATING:
+                {
+                    r.rate.setHertz(1);
+                    g.rate.setHertz(1);
+                    b.rate.setHertz(1);
+                    r.max = 128;
+                    g.max = 48;
+                    b.max = 3;
+                    r.offset = 0;
+                    g.offset = 0;
+                    b.offset = 0;
+                    state = UPDATING;
+                    sched.schedule(UPDATING_CHECK, 100);
+                    break;
+                }
+
+                case UPDATING_CHECK:
+                {
+                    if (ota.isRebooting())
+                        sched.schedule(REBOOTING1, 0);
+                    else if (ota.isUpdating())
+                        sched.schedule(UPDATING_CHECK, 50);
+                    state = UPDATING_CHECK;
+                    break;
+                }
+
+                case REBOOTING1:
+                {
+                    r.rate.setHertz(4);
+                    g.rate.setHertz(4);
+                    b.rate.setHertz(4);
+                    r.max = 65;
+                    g.max = 139;
+                    b.max = 255;
+                    r.offset = 1 / (float) NUM_PXL;
+                    g.offset = 1 / (float) NUM_PXL;
+                    b.offset = 1 / (float) NUM_PXL;
+                    sched.schedule(REBOOTING2, 750);
+                    state = REBOOTING1;
+                    break;
+                }
+
+                case REBOOTING2:
+                {
+                    r.max = 0;
+                    g.max = 0;
+                    b.max = 0;
+                    state = REBOOTING2;
+                    break;
+                }
+           }
+           sched.currentEvents.pop();
         }
 
         for (unsigned i = 0; i < NUM_PXL; i++)
@@ -92,9 +133,10 @@ void runPixels(void* args)
                     g.rate.getStageCos(b.offset * i) * g.max, 
                     b.rate.getStageCos(g.offset * i) * b.max));
         }
+
         pixels.show();
 
-        if (notification & BIT(0))
+        if (notification & BIT(0) || state == REBOOTING2)
             vTaskDelete(NULL);
     }
 }

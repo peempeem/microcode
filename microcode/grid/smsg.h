@@ -12,12 +12,12 @@ class SharedGridBuffer : public Mutex
         {
             PACK(struct Send
             {
-                uint64_t time = 0;
+                uint64_t time;
             });
 
-            uint64_t arrival = 0;
-            bool read = false;
-            bool write = false;
+            uint64_t arrival;
+            bool read;
+            bool written;
             Send send;
             SharedBuffer buf;
         };
@@ -27,6 +27,7 @@ class SharedGridBuffer : public Mutex
         SharedGridBuffer(std::string name, unsigned priority, unsigned expire=1e6);
 
         const std::string& name();
+        unsigned priority();
 
         SharedBuffer& touch(unsigned id);
         

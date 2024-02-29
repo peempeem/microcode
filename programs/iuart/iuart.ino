@@ -4,7 +4,7 @@
 #include "src/microcode/util/filesys.h"
 #include "src/microcode/grid/hub.h"
 
-Rate r(50);
+Rate r(200);
 Rate r2(0.1);
 
 GridMessageHub hub0(1);
@@ -91,10 +91,6 @@ void transportPackets(void* args)
     }
 }
 
-const char* msg0 = "Post from hub0";
-const char* msg2 = "Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D Post from hub2 ligma ballszzz :D";
-const char* msg4 = "Post from hub4";
-
 void setup()
 {
     Log("system") << "booting ...";
@@ -128,26 +124,35 @@ void loop()
         Log("MemoryUsage") << sysMemUsage();
 
         {
-            sharedState0.lock();
-            SharedBuffer& buf = sharedState0.touch(hub0.id());
-            buf = SharedBuffer((const uint8_t*) msg0, strlen(msg0) + 1);
+            std::stringstream ss;
+            ss << sysTime() << "hub0";
+            std::string str = ss.str();
+            SharedBuffer buf = SharedBuffer((const uint8_t*) &str[0], str.size() + 1);
             buf.data()[buf.size() - 1] = 0;
+            sharedState0.lock();
+            sharedState0.touch(hub0.id()) = buf;
             sharedState0.unlock();
         }
 
         {
-            sharedState2.lock();
-            SharedBuffer& buf = sharedState2.touch(hub2.id());
-            buf = SharedBuffer((const uint8_t*) msg2, strlen(msg2) + 1);
+            std::stringstream ss;
+            ss << sysTime() << "hub2";
+            std::string str = ss.str();
+            SharedBuffer buf = SharedBuffer((const uint8_t*) &str[0], str.size() + 1);
             buf.data()[buf.size() - 1] = 0;
+            sharedState2.lock();
+            sharedState2.touch(hub2.id()) = buf;
             sharedState2.unlock();
         }
         
         {
-            sharedState4.lock();
-            SharedBuffer& buf = sharedState4.touch(hub4.id());
-            buf = SharedBuffer((const uint8_t*) msg4, strlen(msg4) + 1);
+            std::stringstream ss;
+            ss << sysTime() << "hub4";
+            std::string str = ss.str();
+            SharedBuffer buf = SharedBuffer((const uint8_t*) &str[0], str.size() + 1);
             buf.data()[buf.size() - 1] = 0;
+            sharedState4.lock();
+            sharedState4.touch(hub4.id()) = buf;
             sharedState4.unlock();
         }
     }
