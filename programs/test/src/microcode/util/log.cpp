@@ -4,6 +4,7 @@
 
 static ByteStream* reserves = NULL;
 static ByteStream* stream = NULL;
+static char* _hook = NULL;
 static Mutex lock;
 static bool disabled = false;
 
@@ -32,6 +33,9 @@ static void writeDebug(std::streambuf* buf)
         lock.unlock();
         return;
     }
+
+    if (_hook)
+        stream->put((uint8_t*) _hook, strlen(_hook));
 
     if (stream)
         stream->put(*buf);
@@ -149,4 +153,14 @@ void Log::enable()
     lock.lock();
     disabled = false;
     lock.unlock();
+}
+
+void Log::hook(char* msg)
+{
+    _hook = msg;
+}
+
+void Log::unhook()
+{
+    _hook = NULL;
 }

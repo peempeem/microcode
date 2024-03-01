@@ -10,6 +10,7 @@ GridPacket::GridPacket(
             unsigned idx,
             unsigned total,
             unsigned retries,
+            unsigned longAckNack,
             unsigned len,
             unsigned priority,
             unsigned sender,
@@ -18,17 +19,18 @@ GridPacket::GridPacket(
             const uint8_t* data,
             unsigned stale) : _buf(sizeof(Packet) + len), _stale(stale), _retries(retries)
 {
-    get().type      = type;
-    get().idx       = idx;
-    get().total     = total;
-    get().retries   = retries;
-    get().len       = len;
-    get().priority  = priority;
-    get().sender    = sender;
-    get().receiver  = receiver;
-    get().id        = id;
-    get().dhash     = hash32(data, len);
-    get().hhash     = hash32(raw(), GRIDPACKET_HEADER_DATA_SIZE);
+    get().type          = type;
+    get().idx           = idx;
+    get().total         = total;
+    get().retries       = retries;
+    get().longAckNack   = longAckNack;
+    get().len           = len;
+    get().priority      = priority;
+    get().sender        = sender;
+    get().receiver      = receiver;
+    get().id            = id;
+    get().dhash         = hash32(data, len);
+    get().hhash         = hash32(raw(), GRIDPACKET_HEADER_DATA_SIZE);
     memcpy(get().data, data, len);
 }
 

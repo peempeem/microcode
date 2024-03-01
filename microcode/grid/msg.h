@@ -27,6 +27,7 @@ class GridMessage
             unsigned receiver,
             unsigned id,
             unsigned retries=-1,
+            bool longAckNack=true,
             unsigned stale=10);
         
         bool insert(GridPacket& pkt);

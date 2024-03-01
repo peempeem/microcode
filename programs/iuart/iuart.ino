@@ -3,19 +3,32 @@
 #include "src/microcode/util/rate.h"
 #include "src/microcode/util/filesys.h"
 #include "src/microcode/grid/hub.h"
+#include "src/microcode/usb/usbcom.h"
 
-Rate r(200);
+Rate r(1);
 Rate r2(0.1);
+Rate r3(1);
 
-GridMessageHub hub0(1);
-GridMessageHub hub1(2);
-GridMessageHub hub2(2);
-GridMessageHub hub3(2);
-GridMessageHub hub4(1);
+GridMessageHub base(1);
+GridMessageHub hubs[] = 
+{
+    GridMessageHub(2),
+    GridMessageHub(2),
+    GridMessageHub(2),
+    GridMessageHub(2),
+    GridMessageHub(1)
+};
 
-SharedGridBuffer sharedState0("RobotState", 1);
-SharedGridBuffer sharedState2("RobotState", 1);
-SharedGridBuffer sharedState4("RobotState", 1);
+SharedGridBuffer sharedStates[] = 
+{
+    SharedGridBuffer("RobotState", (int) GridMessageHub::Priority::USER),
+    SharedGridBuffer("RobotState", (int) GridMessageHub::Priority::USER),
+    SharedGridBuffer("RobotState", (int) GridMessageHub::Priority::USER),
+    SharedGridBuffer("RobotState", (int) GridMessageHub::Priority::USER),
+    SharedGridBuffer("RobotState", (int) GridMessageHub::Priority::USER),
+};
+
+USBMessageBroker usb;
 
 #define linkspeed 10000
 
@@ -51,19 +64,13 @@ void wastePackets(GridMessageHub& h, unsigned b)
 void updateHub(void* args)
 {
     uint32_t notification = 0;
-    Rate r(4);
 
     while (true)
     {
-        xTaskNotifyWait(0, UINT32_MAX, &notification, 10 / portTICK_PERIOD_MS);
-        hub0.update();
-        hub1.update();
-        hub2.update();
-        hub3.update();
-        hub4.update();
-
-        if (r.isReady())
-            Log("updateHub") << uxTaskGetStackHighWaterMark(NULL);
+        xTaskNotifyWait(0, UINT32_MAX, &notification, 2 / portTICK_PERIOD_MS);
+        base.update();
+        for (unsigned i = 0; i < sizeof(hubs) / sizeof(GridMessageHub); i++)
+            hubs[i].update();
 
         if (notification & BIT(0))
             vTaskDelete(NULL);
@@ -73,18 +80,30 @@ void updateHub(void* args)
 void transportPackets(void* args)
 {
     uint32_t notification = 0;
-    Rate r(4);
 
     while (true)
     {
-        xTaskNotifyWait(0, UINT32_MAX, &notification, 10 / portTICK_PERIOD_MS);
-        sendPackets(hub0, hub1, 0, 0);
-        sendPackets(hub1, hub2, 1, 0);
-        sendPackets(hub2, hub3, 1, 0);
-        sendPackets(hub3, hub4, 1, 0);
+        xTaskNotifyWait(0, UINT32_MAX, &notification, 2 / portTICK_PERIOD_MS);
+        sendPackets(base, hubs[0], 0, 1);
+        for (unsigned i = 0; i < (sizeof(hubs) / sizeof(GridMessageHub)) - 2; ++i)
+            sendPackets(hubs[i], hubs[i + 1], 0, 1);
+        sendPackets(hubs[3], hubs[4], 0, 0);
 
-        if (r.isReady())
-            Log("sendPackets") << uxTaskGetStackHighWaterMark(NULL);
+        if (notification & BIT(0))
+            vTaskDelete(NULL);
+    }
+}
+
+void updateUSB(void* args)
+{
+    uint32_t notification = 0;
+
+    while (true)
+    {
+        xTaskNotifyWait(0, UINT32_MAX, &notification, 2 / portTICK_PERIOD_MS);
+        suart0.read();
+        usb.update();
+        suart0.write();
 
         if (notification & BIT(0))
             vTaskDelete(NULL);
@@ -94,100 +113,66 @@ void transportPackets(void* args)
 void setup()
 {
     Log("system") << "booting ...";
-    suart0.init(2000000);
+    suart0.init(2000000, 3, 1);
     Log() >> *suart0.getTXStream();
 
     filesys.init();
     Log("filesys") << filesys.toString(); 
 
-    hub0.listenFor(sharedState0);
-    hub2.listenFor(sharedState2);
-    hub4.listenFor(sharedState4);
+    for (unsigned i = 0; i < sizeof(hubs) / sizeof(GridMessageHub); ++i)
+        hubs[i].listenFor(sharedStates[i]);
 
-    hub0.setLinkSpeed(0, linkspeed);
-    hub1.setLinkSpeed(0, linkspeed);
-    hub1.setLinkSpeed(1, linkspeed);
-    hub2.setLinkSpeed(0, linkspeed);
-    hub2.setLinkSpeed(1, linkspeed);
-    hub3.setLinkSpeed(0, linkspeed);
-    hub3.setLinkSpeed(1, linkspeed);
-    hub4.setLinkSpeed(0, linkspeed);
+    base.setLinkSpeed(0, linkspeed);
+    for (unsigned i = 0; i < sizeof(hubs) / sizeof(GridMessageHub) - 1; ++i)
+    {
+        hubs[i].setLinkSpeed(0, linkspeed);
+        hubs[i].setLinkSpeed(1, linkspeed);
+    }
+    hubs[4].setLinkSpeed(0, linkspeed);
 
-    xTaskCreateUniversal(transportPackets, "transport", 4 * 1024, NULL, 10, NULL, tskNO_AFFINITY);
-    xTaskCreateUniversal(updateHub, "hubupdate", 4 * 1024, NULL, 5, NULL, tskNO_AFFINITY);
+    base.setName("base");
+    hubs[0].setName("module0");
+    hubs[1].setName("module1");
+    hubs[2].setName("module2");
+    hubs[3].setName("module3");
+    hubs[4].setName("module4");
+
+    usb.attachStreams(suart0.getTXStream(), suart0.getRXStream());
+
+    xTaskCreateUniversal(transportPackets, "transport", 4 * 1024, NULL, 11, NULL, tskNO_AFFINITY);
+    xTaskCreateUniversal(updateHub, "updatehub", 4 * 1024, NULL, 10, NULL, tskNO_AFFINITY);
+    //xTaskCreateUniversal(updateUSB, "updateUSB", 4 * 1024, NULL, 12, NULL, tskNO_AFFINITY);
 }
 
 void loop()
 {
-    if (r.isReady())
-    {
-        Log("MemoryUsage") << sysMemUsage();
+    // if (r.isReady())
+    // {
+    //     //Log("MemoryUsage") << sysMemUsage();
 
-        {
-            std::stringstream ss;
-            ss << sysTime() << "hub0";
-            std::string str = ss.str();
-            SharedBuffer buf = SharedBuffer((const uint8_t*) &str[0], str.size() + 1);
-            buf.data()[buf.size() - 1] = 0;
-            sharedState0.lock();
-            sharedState0.touch(hub0.id()) = buf;
-            sharedState0.unlock();
-        }
+    //     for (unsigned i = 0; i < sizeof(hubs) / sizeof(GridMessageHub) - 1; ++i)
+    //     {
+    //         std::stringstream ss;
+    //         ss << sysTime() << " hub" << i;
+    //         std::string str = ss.str();
+    //         SharedBuffer buf = SharedBuffer((const uint8_t*) &str[0], str.size() + 1);
+    //         buf.data()[buf.size() - 1] = 0;
+    //         sharedStates[i].lock();
+    //         sharedStates[i].touch(hubs[i].id()) = buf;
+    //         sharedStates[i].unlock();
+    //     }
+    // }
 
-        {
-            std::stringstream ss;
-            ss << sysTime() << "hub2";
-            std::string str = ss.str();
-            SharedBuffer buf = SharedBuffer((const uint8_t*) &str[0], str.size() + 1);
-            buf.data()[buf.size() - 1] = 0;
-            sharedState2.lock();
-            sharedState2.touch(hub2.id()) = buf;
-            sharedState2.unlock();
-        }
-        
-        {
-            std::stringstream ss;
-            ss << sysTime() << "hub4";
-            std::string str = ss.str();
-            SharedBuffer buf = SharedBuffer((const uint8_t*) &str[0], str.size() + 1);
-            buf.data()[buf.size() - 1] = 0;
-            sharedState4.lock();
-            sharedState4.touch(hub4.id()) = buf;
-            sharedState4.unlock();
-        }
-    }
-
-    sharedState0.lock();
-    for (auto it = sharedState0.data.begin(); it != sharedState0.data.end(); ++it)
-    {
-        if (sharedState0.canRead(it.key()))
-        {
-            Log("sharedstate0") << "id: " << hub0.id() << " _id: " << it.key() << " arrive: " << it->arrival << " msg: " << (char*) it->buf.data(); 
-        }
-            
-    }
-    sharedState0.unlock();
-
-    sharedState2.lock();
-    for (auto it = sharedState2.data.begin(); it != sharedState2.data.end(); ++it)
-    {
-        if (sharedState2.canRead(it.key()))
-        {
-            Log("sharedstate2") << "id: " << hub2.id() << " _id: " << it.key() << " arrive: " << it->arrival << " msg: " << (char*) it->buf.data(); 
-        }
-           
-    }
-    sharedState2.unlock();
-
-    sharedState4.lock();
-    for (auto it = sharedState4.data.begin(); it != sharedState4.data.end(); ++it)
-    {
-        if (sharedState4.canRead(it.key()))
-        {
-            Log("sharedstate4") << "id: " << hub4.id() << " _id: " << it.key() << " arrive: " << it->arrival << " msg: " << (char*) it->buf.data();
-        }
-    }
-    sharedState4.unlock();
+    // for (unsigned i = 0; i < sizeof(hubs) / sizeof(GridMessageHub) - 1; ++i)
+    // {
+    //     sharedStates[i].lock();
+    //     for (auto it = sharedStates[i].data.begin(); it != sharedStates[i].data.end(); ++it)
+    //     {
+    //         if (sharedStates[i].canRead(it.key()))
+    //             Log("sharedstate") << "hub " << i << "id: " << hubs[i].id() << " _id: " << it.key() << " arrive: " << it->arrival << " msg: " << (char*) it->buf.data(); 
+    //     }
+    //     sharedStates[i].unlock();
+    // }
 
     ByteStream* rx = suart0.getRXStream();
     uint8_t buf[128];
@@ -202,13 +187,21 @@ void loop()
         }
     } while (pulled);
 
-    if (r2.isReady())
+    if (r.isReady())
     {
-        hub0._lock.lock();
-        Log("hub0") << hub0._table.toString();
-        Log("hub0") << hub0._graph.toString();
-        Log("hub0") << "bytes: " << hub0.totalBytes();
-        hub0._lock.unlock();
+        NetworkTable::Nodes nodes = base.getTableNodes();
+        Log("base") << nodes.toString();
+    }
+
+    // if (r2.isReady())
+    // {
+    //     NetworkTable::Nodes nodes = base.getTableNodes();
+    //     GridGraph graph;
+    //     base.getGraph(graph);
+        // Log("base") << nodes.toString();
+        // Log("base") << graph.toString();
+        // Log("base") << "bytes: " << base.totalBytes();
+
 
         // std::vector<std::vector<uint16_t>> paths(hub0._table.nodes.size() * hub0._table.nodes.size());
         // uint64_t start1, dt1, start2, dt2;
@@ -234,5 +227,5 @@ void loop()
 
         // Log("djikstra") << dt1;
         // Log("BFS") << dt2;
-    }
+    //}
 }

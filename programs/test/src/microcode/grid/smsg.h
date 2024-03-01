@@ -16,22 +16,24 @@ class SharedGridBuffer : public Mutex
             });
 
             uint64_t arrival = 0;
-            bool read = false;
-            bool write = false;
+            bool readFrom;
+            bool writtenTo;
             Send send;
             SharedBuffer buf;
         };
 
         Hash<Extras> data;
 
+        SharedGridBuffer();
         SharedGridBuffer(std::string name, unsigned priority, unsigned expire=1e6);
 
         const std::string& name();
+        unsigned priority();
 
         SharedBuffer& touch(unsigned id);
         
-        bool canWrite(unsigned id);
-        bool canRead(unsigned id);
+        bool canWrite(unsigned id, bool clear=true);
+        bool canRead(unsigned id, bool clear=true);
 
         unsigned serializeName(uint8_t* ptr);
         unsigned serializeIDS(uint8_t* ptr, unsigned id);

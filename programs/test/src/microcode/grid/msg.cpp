@@ -84,6 +84,7 @@ void GridMessage::package(
     unsigned receiver, 
     unsigned id, 
     unsigned retries, 
+    bool longAckNack,
     unsigned stale)
 {
     _retries = retries;
@@ -91,8 +92,7 @@ void GridMessage::package(
     if (_numPkts > 1)
         *((uint32_t*) (_data.data() + _len)) = hash32(_data.data(), _len);
     
-    packets.clear();
-    packets.reserve(_numPkts);
+    packets.reserve(packets.size() + _numPkts);
     
     unsigned start;
     unsigned len;
@@ -111,6 +111,7 @@ void GridMessage::package(
             i, 
             _numPkts, 
             retries, 
+            longAckNack, 
             len, 
             _priority, 
             sender, 
@@ -119,6 +120,11 @@ void GridMessage::package(
             data() + start, 
             stale);
     }
+
+    if (_numPkts)
+        _retries = packets.back().get().retries;
+    else
+        _retries = 0;
 }
 
 bool GridMessage::insert(GridPacket& pkt)

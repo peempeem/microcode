@@ -11,7 +11,8 @@
 #define GRIDPACKET_IDX_BITS         10
 #define GRIDPACKET_TOTAL_BITS       10
 #define GRIDPACKET_RETRIES_BITS     4
-#define GRIDPACKET_LEN_BITS         10
+#define GRIDPACKET_LONGACKNACK_BIT  1
+#define GRIDPACKET_LEN_BITS         9
 #define GRIDPACKET_PRIORITY_BITS    6
 #define GRIDPACKET_SENDER_BITS      16
 #define GRIDPACKET_RECEIVER_BITS    16
@@ -26,6 +27,7 @@ class GridPacket
             uint32_t idx        : GRIDPACKET_IDX_BITS;
             uint32_t total      : GRIDPACKET_TOTAL_BITS;
             uint32_t retries    : GRIDPACKET_RETRIES_BITS;
+            uint32_t longAckNack: GRIDPACKET_LONGACKNACK_BIT;
             uint32_t len        : GRIDPACKET_LEN_BITS;
             uint32_t priority   : GRIDPACKET_PRIORITY_BITS;
             uint32_t sender     : GRIDPACKET_SENDER_BITS;
@@ -41,6 +43,7 @@ class GridPacket
             unsigned idx,
             unsigned total,
             unsigned retries,
+            unsigned longAckNack,
             unsigned len,
             unsigned priority,
             unsigned sender,
@@ -59,11 +62,9 @@ class GridPacket
 
         bool isStale();
         bool isDead();
-
-        SharedBuffer _buf;
     
     private:
-        
+        SharedBuffer _buf;
         Timer _stale;
         unsigned _retries;
 };

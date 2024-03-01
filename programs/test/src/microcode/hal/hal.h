@@ -11,14 +11,6 @@
 #include "calibration.h"
 #include <Arduino.h>
 #include <esp.h>
-#include <functional>
-
-extern "C"
-{
-    uint8_t temperature_sens_read();
-}
-
-uint8_t temprature_sens_read();
 
 static uint64_t sysTime()
 {
@@ -28,11 +20,6 @@ static uint64_t sysTime()
 static void sysSleep(unsigned ms)
 {
     vTaskDelay(ms / portTICK_PERIOD_MS);
-}
-
-static float sysTemp()
-{
-    return (temprature_sens_read() - 32) / 1.8f;
 }
 
 static float sysMemUsage()

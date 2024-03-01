@@ -1,7 +1,8 @@
 #pragma once
 
-#include "../hal/hal.h"
-#include "../util/hash.h"
+#include "smsg.h"
+#include "filter.h"
+#include "../util/timer.h"
 #include <random>
 #include <sstream>
 
@@ -12,43 +13,49 @@ class NetworkTable
         {   
             PACK(struct Data
             {
-                uint64_t time;
+                float memUsage = -1;
+                float memUsageExternal = -1;
             });
 
             PACK(struct Connection
             {
                 uint16_t node = 0;
                 uint32_t linkspeed = -1;
-                uint32_t usage = 0;
+                uint32_t usage = -1;
             });
 
+            unsigned ping = -1;
+
             uint64_t arrival;
+            uint64_t time;
+            std::string name;
             Data data;
-            Hash<Connection> connections;
+            std::vector<Connection> connections;
             
             unsigned serialize(uint8_t* ptr);
             unsigned deserialize(uint8_t* ptr);
             unsigned serialSize();
         };
 
-        Hash<Node> nodes;
+        class Nodes : public Hash<Node>
+        {
+            public:
+                std::string toString();
+        };
 
-        NetworkTable(unsigned expire=1e6);
-        NetworkTable(uint8_t* ptr, unsigned expire=1e6);
+        Nodes nodes;        
+        SharedGridBuffer sgbufs;
+        Timer filterTimer;
+        IDFilter filter;
+        unsigned currentRandom;
 
-        unsigned serialize(uint8_t* ptr);
-        unsigned deserialize(uint8_t* ptr);
-        unsigned serialSize();
-
-        bool empty();
-
-        void clear();
-        void merge(NetworkTable& table);
+        NetworkTable(unsigned priority=1, unsigned newRandTimer=200, unsigned expire=1e6);
 
         void update();
+        void writeNode(unsigned id, Node& node);
 
-        std::string toString();
+        unsigned nextID();
     
     private:
-        unsigned _expire;
+        std::queue<unsigned> _nextID;
 };

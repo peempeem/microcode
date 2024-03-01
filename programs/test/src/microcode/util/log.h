@@ -31,6 +31,9 @@ class Log
         void disable();
         void enable();
 
+        static void hook(char* msg);
+        static void unhook();
+
     private:
         std::stringstream _ss;
         unsigned _headlen;

@@ -12,18 +12,19 @@ class SharedGridBuffer : public Mutex
         {
             PACK(struct Send
             {
-                uint64_t time;
+                uint64_t time = 0;
             });
 
-            uint64_t arrival;
-            bool read;
-            bool written;
+            uint64_t arrival = 0;
+            bool readFrom;
+            bool writtenTo;
             Send send;
             SharedBuffer buf;
         };
 
         Hash<Extras> data;
 
+        SharedGridBuffer();
         SharedGridBuffer(std::string name, unsigned priority, unsigned expire=1e6);
 
         const std::string& name();
@@ -31,8 +32,8 @@ class SharedGridBuffer : public Mutex
 
         SharedBuffer& touch(unsigned id);
         
-        bool canWrite(unsigned id);
-        bool canRead(unsigned id);
+        bool canWrite(unsigned id, bool clear=true);
+        bool canRead(unsigned id, bool clear=true);
 
         unsigned serializeName(uint8_t* ptr);
         unsigned serializeIDS(uint8_t* ptr, unsigned id);

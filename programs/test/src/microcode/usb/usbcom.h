@@ -4,6 +4,7 @@
 #include "../util/bytestream.h"
 #include "../util/fifo.h"
 #include "../util/priorityqueue.h"
+#include "../util/mutex.h"
 
 class USBMessageBroker
 {
@@ -24,31 +25,33 @@ class USBMessageBroker
                     uint8_t data[];
                 });
 
-                Message() {}
-                Message(uint8_t type, uint8_t priority, const uint8_t* data, uint16_t len);
+                Message();
+                Message(
+                    uint8_t type, 
+                    uint8_t priority, 
+                    const uint8_t* data, 
+                    uint16_t len);
                 Message(Fields::Header& header);
 
-                bool operator<(const Message& other) const { return priority() < other.priority(); }
+                bool operator<(const Message& other) const;
 
-                uint8_t type() const { return ((Fields*) _buf.data())->header.type; }
-                uint8_t priority() const { return ((Fields*) _buf.data())->header.priority; }
-
-                uint8_t* raw() const { return _buf.data(); };
-                unsigned size() const { return _buf.size(); }
-
-                uint8_t* data() const { return ((Fields*) _buf.data())->data; }
-                unsigned dataSize() const { return ((Fields*) _buf.data())->header.len; };
+                Fields& get() const;
+                uint8_t* raw();
+                unsigned size();
 
             private:
                 SharedBuffer _buf;
         };
 
-        MinPriorityQueue<Message> messages;
+        class MessageQueue : public MinPriorityQueue<Message>, public Mutex
+        {
+            public:
+                void push(Message& msg);
+        };
 
-        void attachStreams(ByteStream* tx, ByteStream* rx) {
-            _tx = tx;
-            _rx = rx;
-        }
+        MessageQueue messages;
+
+        void attachStreams(ByteStream* tx, ByteStream* rx);
         void send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len);
         void update();
     
@@ -60,7 +63,7 @@ class USBMessageBroker
         bool _foundHead = false;
         unsigned _idx;
 
-        MinPriorityQueue<Message> _smsgs;
+        MessageQueue _smsgs;
         MinPriorityQueue<Message> _rmsgs;
 
         void _send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len);

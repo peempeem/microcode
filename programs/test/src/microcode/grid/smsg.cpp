@@ -4,6 +4,11 @@
 //// SharedGridBuffer Class
 //
 
+SharedGridBuffer::SharedGridBuffer()
+{
+
+}
+
 SharedGridBuffer::SharedGridBuffer(std::string name, unsigned priority, unsigned expire) : Mutex(), _name(name), _priority(priority), _expire(expire)
 {
     
@@ -14,33 +19,40 @@ const std::string& SharedGridBuffer::name()
     return _name;
 }
 
+unsigned SharedGridBuffer::priority()
+{
+    return _priority;
+}
+
 SharedBuffer& SharedGridBuffer::touch(unsigned id)
 {
     Extras& ex = data[id];
     ex.arrival = sysTime();
     ex.send.time = ex.arrival;
-    ex.write = true;
-    ex.read = true;
+    ex.readFrom = true;
+    ex.writtenTo = true;
     return ex.buf;
 }
 
-bool SharedGridBuffer::canWrite(unsigned id)
+bool SharedGridBuffer::canWrite(unsigned id, bool clear)
 {
     Extras* ex = data.at(id);
-    if (ex && ex->write)
+    if (ex && ex->writtenTo)
     {
-        ex->write = false;
+        if (clear)
+            ex->writtenTo = false;
         return true;
     }
     return false;
 }
 
-bool SharedGridBuffer::canRead(unsigned id)
+bool SharedGridBuffer::canRead(unsigned id, bool clear)
 {
     Extras* ex = data.at(id);
-    if (ex && ex->read)
+    if (ex && !ex->readFrom)
     {
-        ex->read = false;
+        if (clear)
+            ex->readFrom = true;
         return true;
     }
     return false;
@@ -91,11 +103,16 @@ unsigned SharedGridBuffer::serializeIDS(uint8_t* ptr, unsigned id)
 unsigned SharedGridBuffer::serializeIDS(uint8_t* ptr)
 {
     uint8_t* end = ptr;
-    *((uint16_t*) end) = data.size();
+    uint16_t* numIDS = ((uint16_t*) end);
     end += sizeof(uint16_t);
 
+    unsigned ids = 0;
     for (auto it = data.begin(); it != data.end(); ++it)
     {
+        if (!canWrite(it.key()))
+            continue;
+        ids++;
+
         *((uint16_t*) end) = it.key();
         end += sizeof(uint16_t);
 
@@ -108,16 +125,14 @@ unsigned SharedGridBuffer::serializeIDS(uint8_t* ptr)
         memcpy(end, it->buf.data(), it->buf.size());
         end += it->buf.size();
     }
+
+    *numIDS = ids;
     return end - ptr;
 }
 
 unsigned SharedGridBuffer::serialSize(unsigned id)
 {
-    unsigned size = sizeof(uint8_t);
-    if (_name.empty())
-        return size;
-    
-    size += _name.size() + sizeof(uint16_t);
+    unsigned size = sizeof(uint8_t) + _name.size() + sizeof(uint16_t);
     
     Extras* ex = data.at(id);
     if (!ex)
@@ -129,14 +144,13 @@ unsigned SharedGridBuffer::serialSize(unsigned id)
 
 unsigned SharedGridBuffer::serialSize()
 {
-    unsigned size = sizeof(uint8_t);
-    if (_name.empty())
-        return size;
-    
-    size += _name.size() + sizeof(uint16_t);
+    unsigned size = sizeof(uint8_t) + _name.size() + sizeof(uint16_t);
     
     for (auto it = data.begin(); it != data.end(); ++it)
-        size += sizeof(uint16_t) + sizeof(Extras::Send) + sizeof(uint16_t) + it->buf.size();
+    {
+        if (canWrite(it.key(), false))
+            size += sizeof(uint16_t) + sizeof(Extras::Send) + sizeof(uint16_t) + it->buf.size();
+    }
     return size;
 }
 
@@ -144,7 +158,7 @@ unsigned SharedGridBuffer::deserializeName(uint8_t* ptr, std::string& str)
 {
     uint8_t* end = ptr;
     unsigned nameLength = *((uint8_t*) end);
-    end += sizeof(uint8_t);
+    end++;
 
     if (!nameLength)
         str.clear();
@@ -162,6 +176,7 @@ unsigned SharedGridBuffer::deserializeIDS(uint8_t* ptr)
 
     for (unsigned i = 0; i < ids; ++i)
     {
+        unsigned id = *((uint16_t*) end);
         Extras& ex = data[*((uint16_t*) end)];
         end += sizeof(uint16_t);
 
@@ -170,9 +185,9 @@ unsigned SharedGridBuffer::deserializeIDS(uint8_t* ptr)
 
         if (send.time > ex.send.time)
         {
-            ex.write = false;
-            ex.read = true;
             ex.arrival = sysTime();
+            ex.readFrom = false;
+            ex.writtenTo = false;
             ex.send = send;
             ex.buf = SharedBuffer(*((uint16_t*) end));
             end += sizeof(uint16_t);

@@ -10,7 +10,20 @@ enum ReservedTypes
     nonimp3
 };
 
-USBMessageBroker::Message::Message(uint8_t type, uint8_t priority, const uint8_t* data, uint16_t len)
+//
+//// USBMessageBroker::Message Class
+//
+
+USBMessageBroker::Message::Message()
+{
+
+}
+
+USBMessageBroker::Message::Message(
+    uint8_t type, 
+    uint8_t priority, 
+    const uint8_t* data, 
+    uint16_t len)
 {
     _buf = SharedBuffer(sizeof(Fields) + len);
     ((Fields*) _buf.data())->header.type = type;
@@ -25,6 +38,45 @@ USBMessageBroker::Message::Message(Fields::Header& header)
 {
     _buf = SharedBuffer(sizeof(Fields) + header.len);
     ((Fields*) _buf.data())->header = header;
+}
+
+bool USBMessageBroker::Message::operator<(const Message& other) const
+{
+    return get().header.priority < get().header.priority;
+}
+
+USBMessageBroker::Message::Fields& USBMessageBroker::Message::get() const
+{
+    return *((Fields*) _buf.data());
+}
+
+uint8_t* USBMessageBroker::Message::raw()
+{
+    return _buf.data();
+}
+
+unsigned USBMessageBroker::Message::size()
+{
+    return _buf.size();
+}
+
+//
+//// USBMessageBroker::MessageQueue Class
+//
+
+void USBMessageBroker::MessageQueue::push(Message& msg)
+{
+    MinPriorityQueue::push(msg, msg.get().header.priority);
+}
+
+//
+//// USBMessageBroker Class
+//
+
+void USBMessageBroker::attachStreams(ByteStream* tx, ByteStream* rx)
+{
+    _tx = tx;
+    _rx = rx;
 }
 
 void USBMessageBroker::send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len)
@@ -42,7 +94,7 @@ void USBMessageBroker::update()
     do
     {
         pulled = _rx->get(buf, 128);
-        for (unsigned i = 0; i < (unsigned) sizeof(buf); ++i)
+        for (unsigned i = 0; i < sizeof(buf); ++i)
         {
             if (!_foundHead)
             {
@@ -51,14 +103,16 @@ void USBMessageBroker::update()
                 {
                     _rmsg = Message(*((Message::Fields::Header*) _buf.data));
                     _idx = 0;
-                    if (_rmsg.dataSize() == 0)
+                    if (!_rmsg.get().header.len)
                     {
-                        if (_rmsg.type() < sizeof(ReservedTypes))
-                            _rmsgs.push(_rmsg, _rmsg.priority());
+                        if (_rmsg.get().header.type < sizeof(ReservedTypes))
+                            _rmsgs.push(_rmsg, _rmsg.get().header.priority);
                         else
                         {
-                            ((Message::Fields*) _rmsg.raw())->header.type -= sizeof(ReservedTypes);
-                            messages.push(_rmsg, _rmsg.priority());
+                            _rmsg.get().header.type -= sizeof(ReservedTypes);
+                            messages.lock();
+                            messages.push(_rmsg);
+                            messages.unlock();
                         }
                     }
                     else
@@ -67,32 +121,34 @@ void USBMessageBroker::update()
             }
             else
             {
-                _rmsg.data()[_idx++] = buf[i];
-                if (_idx >= _rmsg.dataSize())
+                _rmsg.get().data[_idx++] = buf[i];
+                if (_idx >= _rmsg.get().header.len)
                 {
-                    if (((Message::Fields*) _rmsg.raw())->header.dhash == hash32(_rmsg.data(), _rmsg.dataSize()))
+                    if (((Message::Fields*) _rmsg.raw())->header.dhash == hash32(_rmsg.get().data, _rmsg.get().header.len))
                     {
-                        if (_rmsg.type() < sizeof(ReservedTypes))
-                            _rmsgs.push(_rmsg, _rmsg.priority());
+                        if (_rmsg.get().header.type < sizeof(ReservedTypes))
+                            _rmsgs.push(_rmsg, _rmsg.get().header.priority);
                         else
                         {
-                            ((Message::Fields*) _rmsg.raw())->header.type -= sizeof(ReservedTypes);
-                            messages.push(_rmsg, _rmsg.priority());
+                            _rmsg.get().header.type -= sizeof(ReservedTypes);
+                            messages.lock();
+                            messages.push(_rmsg);
+                            messages.unlock();                       
                         }
                     }
                     _foundHead = false;
                 }
-            } 
+            }
         }
         
     } while (pulled);
 
     while (_rmsgs.size())
     {
-        switch (_rmsgs.top().type())
+        switch (_rmsgs.top().get().header.type)
         {
             case ReservedTypes::ping:
-                _send(ReservedTypes::reping, _rmsgs.topPriority(), _rmsgs.top().data(), _rmsgs.top().dataSize());
+                _send(ReservedTypes::reping, _rmsgs.topPriority(), _rmsgs.top().get().data, _rmsgs.top().get().header.len);
                 break;
             
             default:
@@ -101,15 +157,19 @@ void USBMessageBroker::update()
         _rmsgs.pop();
     }
 
+    _smsgs.lock();
     while (_smsgs.size())
     {
         _tx->put(_smsgs.top().raw(), _smsgs.top().size());
         _smsgs.pop();
     }
+    _smsgs.unlock();
 }
 
 void USBMessageBroker::_send(uint8_t type, uint8_t priority, uint8_t* data, uint16_t len)
 {
     Message msg(type, priority, data, len);
-    _smsgs.push(msg, priority);
+    _smsgs.lock();
+    _smsgs.push(msg);
+    _smsgs.unlock();
 }

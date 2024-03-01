@@ -5,6 +5,7 @@
 PACK(struct TableData
 {
     uint16_t sender;
+    uint32_t rand;
     uint8_t table[];
 });
 
@@ -23,7 +24,8 @@ struct AckNAck
     uint32_t ackNAck    : 1;
 
     AckNAck() { }
-    AckNAck(unsigned idx, unsigned id, unsigned ackNAck) : idx(idx), id(id), ackNAck(ackNAck) { }
+    AckNAck(unsigned idx, unsigned id, unsigned ackNAck) 
+        : idx(idx), id(id), ackNAck(ackNAck) { }
 };
 
 PACK(struct AckNAckData
@@ -41,14 +43,18 @@ PACK(struct PingPongData
 //// GridMessageHub Class
 //
 
-GridMessageHub::GridMessageHub(unsigned numIO, unsigned broadcast) : _broadcast(broadcast), _msgID(0)
+GridMessageHub::GridMessageHub(
+    unsigned numIO, 
+    unsigned broadcast, 
+    unsigned maxBroadcastBonusIDs,
+    unsigned ping) 
+    :   _broadcast(broadcast), 
+        _maxBroadcastBonusIDs(maxBroadcastBonusIDs),
+        _ping(ping)
 {
     _ios = std::vector<IO>(numIO);
-    srand(sysTime());
     _newID();
-    _node.arrival = sysTime();
-    _node.data.time = _node.arrival;
-    _table.nodes[_id] = _node;
+    _node.connections.resize(numIO);
 }
 
 unsigned GridMessageHub::id()
@@ -61,13 +67,27 @@ GridMessageHub::IO::Public& GridMessageHub::operator[](unsigned io)
     return _ios[io].pub;
 }
 
-void GridMessageHub::setLinkSpeed(unsigned branch, unsigned speed)
+void GridMessageHub::setName(std::string name)
 {
-    _node.connections[branch].linkspeed = speed;
-    _ios[branch].usage.setLinkSpeed(speed);
+    _nodeLock.lock();
+    _node.name = name;
+    _nodeLock.unlock();
 }
 
-bool GridMessageHub::send(GridMessage& msg, uint16_t receiver, unsigned retries)
+void GridMessageHub::setLinkSpeed(unsigned branch, unsigned speed)
+{
+    _nodeLock.lock();
+    _node.connections[branch].linkspeed = speed;
+    _nodeLock.unlock();
+    _ios[branch].usageLock.lock();
+    _ios[branch].usage.setLinkSpeed(speed);
+    _ios[branch].usageLock.unlock();
+}
+
+bool GridMessageHub::send(
+    GridMessage& msg, 
+    uint16_t receiver, 
+    unsigned retries)
 {
     if (!receiver)
     {
@@ -81,17 +101,19 @@ bool GridMessageHub::send(GridMessage& msg, uint16_t receiver, unsigned retries)
         std::vector<uint16_t> path;
         _graph.path(path, _id, receiver);
 
+        if (path.size() < 2)
+            return false;
+
         int branch = _getBranchByID(path[1]);
         if (branch != -1)
             _sendBranch(msg, branch, receiver, retries);
     }
+    return true;
 }
 
-void GridMessageHub::updateTop(bool onlyIfLock)
+void GridMessageHub::update()
 {
-    if (onlyIfLock && !_lock.lock(0))
-        return;
-    
+    _updateLock.lock();
     // process all incoming packets
     Hash<std::vector<AckNAck>> ackNAcksLong;
     for (unsigned i = 0; i < _ios.size(); ++i)
@@ -122,7 +144,7 @@ void GridMessageHub::updateTop(bool onlyIfLock)
                 continue;
             
             // stash packet for processing if it arrived at its destination
-            if (pkt.get().receiver == _id || !pkt.get().receiver)
+            if (!pkt.get().receiver || pkt.get().receiver == _id)
             {
                 InboundData::MessageStore& ms = _inbound[pkt.get().sender].store[pkt.get().id];
                 ms.msg.insert(pkt);
@@ -138,8 +160,8 @@ void GridMessageHub::updateTop(bool onlyIfLock)
                     }
                 }
 
-                // send long Ack if packet has retries
-                else if (pkt.get().retries)
+                // send long Ack if packet applicable
+                else if (pkt.get().longAckNack)
                     ackNAcksLong[pkt.get().sender].emplace_back((unsigned) pkt.get().idx, (unsigned) pkt.get().id, ACK);
             }
 
@@ -160,7 +182,8 @@ void GridMessageHub::updateTop(bool onlyIfLock)
                 }
                 
                 // if no path found or node connection missmatch, send NAck to sender
-                ackNAcksLong[pkt.get().sender].emplace_back((unsigned) pkt.get().idx, (unsigned) pkt.get().id, NACK);
+                if (pkt.get().longAckNack)
+                    ackNAcksLong[pkt.get().sender].emplace_back((unsigned) pkt.get().idx, (unsigned) pkt.get().id, NACK);
                 _inbound[pkt.get().sender].filter.remove(filterID);
             }
         }
@@ -179,23 +202,30 @@ void GridMessageHub::updateTop(bool onlyIfLock)
             (*this)[i].in.failed.pop();
             (*this)[i].in.failed.unlock();
 
-            // if packet is malformed and does not have retries, then it is lost
-            if (!pkt.get().retries)
-                continue;
+            // packet is malformed and has retries
+            if (pkt.get().retries)
+            {
+                // if already in filter send Ack else send NAck
+                unsigned filterID = (((unsigned) pkt.get().id) << 16) + pkt.get().idx;
+                unsigned toAck = (_inbound[pkt.get().sender].filter.contains(filterID, false)) ? ACK : NACK;
+                ackNAcks.emplace_back((unsigned) pkt.get().idx, (unsigned) pkt.get().id, toAck);
+            }
 
-            // if already in filter send Ack else send NAck
-            unsigned filterID = (((unsigned) pkt.get().id) << 16) + pkt.get().idx;
-            unsigned toAck = (_inbound[pkt.get().sender].filter.contains(filterID, false)) ? ACK : NACK;
-            ackNAcks.emplace_back((unsigned) pkt.get().idx, (unsigned) pkt.get().id, toAck);            
+            // packet is malformed and does not have retries but has longAckNack
+            else
+                ackNAcksLong[pkt.get().sender].emplace_back((unsigned) pkt.get().idx, (unsigned) pkt.get().id, NACK);
         }
 
         // send AckNAcks to packets received on branch if node id is recognized
         if (!ackNAcks.empty())
         {
             uint16_t id = _node.connections[i].node;
-            if (id != (uint16_t) -1)
+            if (id)
             {
-                GridMessage msg((int) NetworkMessages::AckNAck, 0, sizeof(AckNAckData) + ackNAcks.size() * sizeof(AckNAck));
+                GridMessage msg(
+                    (int) NetworkMessages::AckNAck, 
+                    (int) Priority::ACKNACK, 
+                    sizeof(AckNAckData) + ackNAcks.size() * sizeof(AckNAck));
                 AckNAckData* data = (AckNAckData*) msg.data();
                 data->len = ackNAcks.size();
                 memcpy(data->data, &ackNAcks[0], ackNAcks.size() * sizeof(AckNAck));
@@ -216,7 +246,10 @@ void GridMessageHub::updateTop(bool onlyIfLock)
             int branch = _getBranchByID(path[1]);
             if (branch != -1)
             {
-                GridMessage msg((int) NetworkMessages::AckNAckLong, 0, sizeof(AckNAckData) + (*it).size() * sizeof(AckNAck));
+                GridMessage msg(
+                    (int) NetworkMessages::AckNAckLong, 
+                    (int) Priority::ACKNACK, 
+                    sizeof(AckNAckData) + (*it).size() * sizeof(AckNAck));
                 AckNAckData* data = (AckNAckData*) msg.data();
                 data->len = (*it).size();
                 memcpy(data->data, &(*it)[0], (*it).size() * sizeof(AckNAck));
@@ -224,15 +257,6 @@ void GridMessageHub::updateTop(bool onlyIfLock)
             }
         }
     }
-
-    if (onlyIfLock)
-        _lock.unlock();
-}
-
-void GridMessageHub::update()
-{
-    _lock.lock();
-    updateTop(false);
 
     // itterate through all nodes that sent messsages
     for (auto inIT = _inbound.begin(); inIT != _inbound.end(); ++inIT)
@@ -247,15 +271,22 @@ void GridMessageHub::update()
                     case (int) NetworkMessages::Table:
                     {
                         TableData* td = (TableData*) (*storeIT).msg.data();
-                        _node.connections[(*storeIT).branch].node = td->sender;
-                        NetworkTable table(td->table);
-                        _table.merge(table);
-                        if (td->sender == _id)
+                        
+                        if (td->sender == _id && !_table.filter.contains(td->rand, false))
                         {
                             _kill(_id);
-                            Log("hub") << "new id by kill";
                             _newID();
                         }
+
+                        _nodeLock.lock();
+                        _node.connections[(*storeIT).branch].node = td->sender;
+                        _nodeLock.unlock();
+
+                        uint8_t* ptr = td->table;
+                        std::string name;
+                        ptr += _table.sgbufs.deserializeName(ptr, name);
+                        if (name == _table.sgbufs.name())
+                            ptr += _table.sgbufs.deserializeIDS(ptr);
                         break;
                     }
 
@@ -271,7 +302,7 @@ void GridMessageHub::update()
                         AckNAckData* anad = (AckNAckData*) (*storeIT).msg.data();
                         for (unsigned i = 0; i < anad->len; ++i)
                         {
-                            // TODO: implement ack nack stuff
+                            // TODO: implement recv ack nack stuff
                         }
                         break;
                     }
@@ -281,22 +312,31 @@ void GridMessageHub::update()
                         AckNAckData* anad = (AckNAckData*) (*storeIT).msg.data();
                         for (unsigned i = 0; i < anad->len; ++i)
                         {
-                            // TODO: implement long ack nack stuff
+                            // TODO: implement recv long ack nack stuff
                         }
                         break;
                     }
 
                     case (int) NetworkMessages::Ping:
                     {
-                        GridMessage msg((int) NetworkMessages::Pong, 0, (*storeIT).msg.data(), (*storeIT).msg.len());
-                        *((PingPongData*) msg.data()) = *((PingPongData*) (*storeIT).msg.data());
+                        GridMessage msg(
+                            (int) NetworkMessages::Pong, 
+                            (int) Priority::PING_PONG, 
+                            (*storeIT).msg.data(), 
+                            (*storeIT).msg.len());
                         send(msg, (*storeIT).msg.sender(), (*storeIT).msg.retries());
                         break;
                     }
 
                     case (int) NetworkMessages::Pong:
                     {
-                        // TODO: implement pong
+                        PingPongData* ppd = (PingPongData*) (*storeIT).msg.data();
+                        PingData* pd = _pings.at((*storeIT).msg.sender());
+                        if (!pd || pd->id != ppd->id)
+                            break;
+                        NetworkTable::Node* n = _table.nodes.at((*storeIT).msg.sender());
+                        if (n)
+                            n->ping = sysTime() - pd->start;
                         break;
                     }
 
@@ -335,25 +375,23 @@ void GridMessageHub::update()
     }
     _inbound.shrink();
 
-    // update hub's node in table
-    _node.arrival = sysTime();
-    _node.data.time = _node.arrival;
-
+    // update node usage
     unsigned usageIdx = 0;
+    _nodeLock.lock();
     for (auto it = _node.connections.begin(); it != _node.connections.end(); ++it)
-        (*it).usage = _ios[usageIdx++].usage.usage();
-
-    _table.nodes[_id] = _node;
-    _table.update();
-
-    // remove nodes from table that are in graveyard
-    _graveyard.preen();
-    for (auto it = _table.nodes.begin(); it != _table.nodes.end(); ++it)
     {
-        if (_graveyard.contains(it.key(), false))
-            _table.nodes.remove(it);
+        _ios[usageIdx].usageLock.lock();
+        _ios[usageIdx].usage.update();
+        (*it).usage = _ios[usageIdx].usage.usage();
+        _ios[usageIdx++].usageLock.unlock();
     }
-    _table.nodes.shrink();
+    _nodeLock.unlock();
+
+    _table.update();
+    _graveyard.preen();
+
+    if (_graveyard.contains(_id, false))
+        _newID();
 
     // update shared data
     for (auto it = _sharedData.begin(); it != _sharedData.end(); ++it)
@@ -361,95 +399,169 @@ void GridMessageHub::update()
         it->second->lock();
         if (it->second->canWrite(_id))
         {
-            unsigned ss = it->second->serialSize(_id);
-            GridMessage msg((int) NetworkMessages::SharedMessage, 1, ss);
+            GridMessage msg(
+                (int) NetworkMessages::SharedMessage, 
+                it->second->priority(), 
+                it->second->serialSize(_id));
             uint8_t* ptr = msg.data();
             ptr += it->second->serializeName(ptr);
             ptr += it->second->serializeIDS(ptr, _id);
 
-            it->second->preen();
-            it->second->unlock();
-
             for (unsigned i = 0; i < _ios.size(); ++i)
                 _sendBranch(msg, i, 0, 0);
         }
-        else
-        {
-            it->second->preen();
-            it->second->unlock();
-        }
+        it->second->preen();
+        it->second->unlock();
     }
     
     // send table broadcast
     if (_broadcast.isRinging())
     {
-        unsigned ss = _table.serialSize();
-        GridMessage msg((int) NetworkMessages::Table, 0, sizeof(uint16_t) + ss);
-        *((uint16_t*) msg.data()) = _id;
-        unsigned s = _table.serialize(msg.data() + sizeof(uint16_t));
+        _nodeLock.lock();
+        _node.arrival = sysTime();
+        _node.time = _node.arrival;
+        _node.data.memUsage = sysMemUsage();
+        _node.data.memUsageExternal = sysMemUsageExternal();
+        _table.writeNode(_id, _node);
+        _nodeLock.unlock();
+
+        for (unsigned i = 0; i < _maxBroadcastBonusIDs; ++i)
+            _table.nextID();
+        
+        GridMessage msg(
+            (int) NetworkMessages::Table, 
+            (int) Priority::NETWORK_TABLE, 
+            sizeof(TableData) + _table.sgbufs.serialSize());
+        TableData* td = (TableData*) msg.data();
+        td->sender = _id;
+        td->rand = _table.currentRandom;
+        uint8_t* ptr = td->table + _table.sgbufs.serializeName(td->table);
+        ptr += _table.sgbufs.serializeIDS(ptr);
 
         for (unsigned i = 0; i < _ios.size(); ++i)
-            _sendBranch(msg, i, 0, 0);
+            _sendBranch(msg, i, 0, 0, false);
         
         _graph.representTable(_table);
         _broadcast.reset();
     }
-    
-    for (unsigned i = 0; i < _ios.size(); ++i)
-        _ios[i].usage.update();
 
-    _lock.unlock();
+    // start pings
+    for (auto it = _table.nodes.begin(); it != _table.nodes.end(); ++it)
+    {
+        if (!_pings.contains(it.key()))
+        {
+            PingData& pd = _pings[it.key()];
+            pd.pinger.set(_ping);
+        }
+    }
+
+    // send pings
+    for (auto it = _pings.begin(); it != _pings.end(); ++it)
+    {
+        if (!_table.nodes.contains(it.key()))
+            _pings.remove(it);
+        else if (it->pinger.isRinging())
+        {
+            it->start = sysTime();
+            PingPongData ppd;
+            ppd.id = ++it->id;
+
+            GridMessage msg(
+                (int) NetworkMessages::Ping,
+                (int) Priority::PING_PONG, 
+                (uint8_t*) &ppd,
+                sizeof(PingPongData));
+
+            send(msg, it.key(), 1);
+            
+            it->pinger.reset();
+        }
+    }
+    _updateLock.unlock();
 }
 
 void GridMessageHub::listenFor(SharedGridBuffer& sgb)
 {
-    _lock.lock();
+    _sharedDataLock.lock();
     _sharedData[sgb.name()] = &sgb;
-    _lock.unlock();
+    _sharedDataLock.unlock();
+}
+
+NetworkTable::Nodes GridMessageHub::getTableNodes()
+{
+    _updateLock.lock();
+    NetworkTable::Nodes nodes = _table.nodes;
+    _updateLock.unlock();
+    return nodes;
+}
+
+void GridMessageHub::getGraph(GridGraph& graph)
+{
+    _updateLock.lock();
+    graph = _graph;
+    _updateLock.unlock();
 }
 
 uint64_t GridMessageHub::totalBytes()
 {
     uint64_t bytes = 0;
     for (IO& io : _ios)
+    {
+        io.usageLock.lock();
         bytes += io.usage.total();
+        io.usageLock.unlock();
+    }
     return bytes;
 }
 
 void GridMessageHub::_newID()
 {
     do
-        _id = rand();
-    while (!_id || _table.nodes.contains(_id) || _graveyard.contains(_id));
+        _id = esp_random();
+    while (!_id || _table.nodes.contains(_id) || _graveyard.contains(_id, false));
 }
 
 void GridMessageHub::_kill(unsigned id)
 {
-    _graveyard.contains(id);
+    if (_graveyard.contains(id))
+        return;
 
-    GridMessage msg((int) NetworkMessages::DeathNote, 0, sizeof(DeathNoteData));
+    GridMessage msg(
+        (int) NetworkMessages::DeathNote, 
+        (int) Priority::DEATH_NOTE, 
+        sizeof(DeathNoteData));
     ((DeathNoteData*) msg.data())->victim = id;
 
     for (unsigned i = 0; i < _ios.size(); ++i)
-        _sendBranch(msg, i, 0, 0, false);
+        _sendBranch(msg, i, -1, 0, false);
 }
 
 int GridMessageHub::_getBranchByID(unsigned id)
 {
-    for (auto it = _node.connections.begin(); it != _node.connections.end(); ++it)
+    _nodeLock.lock();
+    for (unsigned i = 0; i < _node.connections.size(); ++i)
     {
-        if ((*it).node == id)
-            return it.key();
+        if (_node.connections[i].node == id)
+        {
+            _nodeLock.unlock();
+            return i;
+        }
     }
+    _nodeLock.unlock();
     return -1;
 }
 
 void GridMessageHub::_sendBranch(GridPacket& pkt, unsigned branch)
 {
+    // push packet to IO
     (*this)[branch].out.lock();
     (*this)[branch].out.push(pkt);
     (*this)[branch].out.unlock();
+
+    // update usage
+    _ios[branch].usageLock.lock();
     _ios[branch].usage.trackBytes(pkt.size());
+    _ios[branch].usageLock.unlock();
 
     // TODO: add safety buffering
     if (pkt.get().retries)
@@ -458,13 +570,22 @@ void GridMessageHub::_sendBranch(GridPacket& pkt, unsigned branch)
     }
 }
 
-void GridMessageHub::_sendBranch(GridMessage& msg, unsigned branch, unsigned receiver, unsigned retries, bool longAckNAcks)
+void GridMessageHub::_sendBranch(
+    GridMessage& msg, 
+    unsigned branch, 
+    unsigned receiver, 
+    unsigned retries, 
+    bool longAckNAcks)
 {
+    // split up message into packets
     std::vector<GridPacket> packets;
-    msg.package(packets, _id, receiver, _msgID++, retries);
+    _msgIDLock.lock();
+    unsigned id = _msgID++;
+    _msgIDLock.unlock();
+    msg.package(packets, _id, receiver, id, retries, longAckNAcks);
 
-    unsigned bytes = 0;
-    
+    // push packets to IO
+    unsigned bytes = 0;   
     (*this)[branch].out.lock();
     for (GridPacket& pkt : packets)
     {
@@ -473,7 +594,10 @@ void GridMessageHub::_sendBranch(GridMessage& msg, unsigned branch, unsigned rec
     }
     (*this)[branch].out.unlock();
 
+    // update usage
+    _ios[branch].usageLock.lock();
     _ios[branch].usage.trackBytes(bytes);
+    _ios[branch].usageLock.unlock();
 
     // TODO: add safety buffering
     if (retries)

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../util/hash.h"
-#include <stdint.h>
 #include <queue>
 
 class IDFilter

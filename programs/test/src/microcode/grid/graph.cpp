@@ -50,8 +50,6 @@ void GridGraph::representTable(NetworkTable& table)
 
 void GridGraph::path(std::vector<uint16_t>& p, uint16_t start, uint16_t end)
 {
-    p.clear();
-
     if (!_toIDX.contains(start) || !_toIDX.contains(end))
         return;
 
