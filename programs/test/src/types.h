@@ -56,3 +56,9 @@ struct WiFiData
     char host[64];
     char pass[64];
 };
+
+PACK(struct SetDrivers
+{
+    uint8_t stage;
+    StageState::Drivers drivers;
+});

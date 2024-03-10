@@ -8,13 +8,9 @@
 //// GridGraph Class
 //
 
-GridGraph::GridGraph()
-{
-
-}
-
 void GridGraph::representTable(NetworkTable& table)
 {
+    writeLock();
     _vertices = std::vector<Vertex>(table.nodes.size());
     _toIDX = StaticHash<uint16_t>(table.nodes.size());
     _toID = std::vector<uint16_t>(table.nodes.size());
@@ -45,17 +41,22 @@ void GridGraph::representTable(NetworkTable& table)
         }
     }
     _data.clear();
-    _bfsData.clear();
+    writeUnlock();
 }
 
 void GridGraph::path(std::vector<uint16_t>& p, uint16_t start, uint16_t end)
 {
+    readLock();
     if (!_toIDX.contains(start) || !_toIDX.contains(end))
+    {
+        readUnlock();
         return;
+    }
 
     if (start == end)
     {
         p.push_back(start);
+        readUnlock();
         return;
     }
 
@@ -64,6 +65,14 @@ void GridGraph::path(std::vector<uint16_t>& p, uint16_t start, uint16_t end)
 
     if (!_data.contains(start))
     {
+        readUnlock();
+        writeLock();
+        if (_data.contains(start))
+        {
+            _extractPath(p, start, end, _data[start]);
+            writeUnlock();
+        }
+
         std::vector<DijkstraData>& data = _data[start];
         data.resize(_vertices.size());
         MinPriorityQueue<unsigned> pq;
@@ -86,69 +95,20 @@ void GridGraph::path(std::vector<uint16_t>& p, uint16_t start, uint16_t end)
                 }
             }
         }
+        _extractPath(p, start, end, _data[start]);
+        writeUnlock();
     }
-
-    _extractPath(p, start, end, _data[start]);
-}
-
-void GridGraph::pathBFS(std::vector<uint16_t>& p, uint16_t start, uint16_t end)
-{
-    p.clear();
-
-    if (!_toIDX.contains(start) || !_toIDX.contains(end))
-        return;
-
-    if (start == end)
+    else
     {
-        p.push_back(start);
-        return;
+        _extractPath(p, start, end, _data[start]);
+        readUnlock();
     }
 
-    start = _toIDX[start];
-    end = _toIDX[end];
-
-    unsigned key = (start << 16) + end;
-
-    auto* pp = _bfsData.at(key);
-
-    if (pp)
-    {
-        p = *pp;
-        return;
-    }
-
-    std::queue<uint16_t> toVisit;
-    std::vector<DijkstraData> data = std::vector<DijkstraData>(_vertices.size());
-
-    toVisit.push(start);
-
-    while (!toVisit.empty())
-    {
-        if (toVisit.front() == end)
-            break;
-        
-        for (auto& edge : _vertices[toVisit.front()].edges)
-        {
-            if (edge.id == (uint16_t) -1 || edge.id == start)
-                continue;
-            
-            auto& dd = data[edge.id];
-            if (dd.parent == (uint16_t) -1)
-            {
-                dd.parent = toVisit.front();
-                toVisit.push(edge.id);
-            }
-        }
-
-        toVisit.pop();
-    }
-
-    _extractPath(p, start, end, data);
-    _bfsData[key] = p;   
 }
 
 std::string GridGraph::toString()
 {
+    readLock();
     std::stringstream ss;
     ss << "Enumerating Nodes ...\n";
     ss << "Vertex:\tEdges:\n";
@@ -165,7 +125,7 @@ std::string GridGraph::toString()
         ss << "\n";
     }
     ss << "Done Enumerating Nodes";
-    
+    readUnlock();
     return ss.str();
 }
 

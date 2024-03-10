@@ -25,10 +25,15 @@ class SharedGridBuffer : public Mutex
         Hash<Extras> data;
 
         SharedGridBuffer();
-        SharedGridBuffer(std::string name, unsigned priority, unsigned expire=1e6);
+        SharedGridBuffer(
+            std::string name,
+            unsigned priority,
+            unsigned expire=1e6,
+            unsigned retries=15);
 
         const std::string& name();
         unsigned priority();
+        unsigned retries();
 
         SharedBuffer& touch(unsigned id);
         
@@ -36,11 +41,11 @@ class SharedGridBuffer : public Mutex
         bool canRead(unsigned id, bool clear=true);
 
         unsigned serializeName(uint8_t* ptr);
-        unsigned serializeIDS(uint8_t* ptr, unsigned id);
+        unsigned serializeID(uint8_t* ptr, unsigned id);
         unsigned serializeIDS(uint8_t* ptr);
 
-        unsigned serialSize(unsigned id);
-        unsigned serialSize();
+        bool serialSizeID(unsigned id, unsigned& size);
+        bool serialSizeIDS(unsigned& size);
 
         static unsigned deserializeName(uint8_t* ptr, std::string& str);
         unsigned deserializeIDS(uint8_t* ptr);
@@ -51,4 +56,5 @@ class SharedGridBuffer : public Mutex
         std::string _name;
         unsigned _priority;
         unsigned _expire;
+        unsigned _retries;
 };

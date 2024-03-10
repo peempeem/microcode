@@ -9,7 +9,15 @@ SharedGridBuffer::SharedGridBuffer()
 
 }
 
-SharedGridBuffer::SharedGridBuffer(std::string name, unsigned priority, unsigned expire) : Mutex(), _name(name), _priority(priority), _expire(expire)
+SharedGridBuffer::SharedGridBuffer(
+    std::string name,
+    unsigned priority,
+    unsigned expire,
+    unsigned retries) 
+    :   Mutex(),
+        _name(name),
+        _priority(priority),
+        _expire(expire)
 {
     
 }
@@ -22,6 +30,11 @@ const std::string& SharedGridBuffer::name()
 unsigned SharedGridBuffer::priority()
 {
     return _priority;
+}
+
+unsigned SharedGridBuffer::retries()
+{
+    return _retries;
 }
 
 SharedBuffer& SharedGridBuffer::touch(unsigned id)
@@ -72,7 +85,7 @@ unsigned SharedGridBuffer::serializeName(uint8_t* ptr)
     return end - ptr;
 }
 
-unsigned SharedGridBuffer::serializeIDS(uint8_t* ptr, unsigned id)
+unsigned SharedGridBuffer::serializeID(uint8_t* ptr, unsigned id)
 {
     uint8_t* end = ptr;
     Extras* ex = data.at(id);
@@ -130,28 +143,35 @@ unsigned SharedGridBuffer::serializeIDS(uint8_t* ptr)
     return end - ptr;
 }
 
-unsigned SharedGridBuffer::serialSize(unsigned id)
+bool SharedGridBuffer::serialSizeID(unsigned id, unsigned& size)
 {
-    unsigned size = sizeof(uint8_t) + _name.size() + sizeof(uint16_t);
+    size = sizeof(uint8_t) + _name.size() + sizeof(uint16_t);
+
+    bool newData = false;
     
     Extras* ex = data.at(id);
     if (!ex)
         return size;
 
     size += sizeof(uint16_t) + sizeof(Extras::Send) + sizeof(uint16_t) + ex->buf.size();
-    return size;
+    return newData;
 }
 
-unsigned SharedGridBuffer::serialSize()
+bool SharedGridBuffer::serialSizeIDS(unsigned& size)
 {
-    unsigned size = sizeof(uint8_t) + _name.size() + sizeof(uint16_t);
+    size = sizeof(uint8_t) + _name.size() + sizeof(uint16_t);
+
+    bool newData = false;
     
     for (auto it = data.begin(); it != data.end(); ++it)
     {
         if (canWrite(it.key(), false))
+        {
             size += sizeof(uint16_t) + sizeof(Extras::Send) + sizeof(uint16_t) + it->buf.size();
+            newData = true;
+        }
     }
-    return size;
+    return newData;
 }
 
 unsigned SharedGridBuffer::deserializeName(uint8_t* ptr, std::string& str)

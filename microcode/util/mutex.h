@@ -6,10 +6,11 @@
 class Mutex
 {
     public:
+        Mutex(int maxCount=-1);
         bool lock(TickType_t timeout=portMAX_DELAY);
         bool unlock();
     
     private:
-        SharedBuffer buf;
-        SemaphoreHandle_t _semaphore = NULL;
+        SharedBuffer _buf;
+        SemaphoreHandle_t _semaphore;
 };

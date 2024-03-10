@@ -38,6 +38,7 @@ class GridPacket
             uint8_t data[];
         });
 
+        GridPacket() {}
         GridPacket(
             unsigned type,
             unsigned idx,
@@ -50,8 +51,8 @@ class GridPacket
             unsigned receiver,
             unsigned id,
             const uint8_t* data,
-            unsigned stale=250);
-        GridPacket(const uint8_t* data, unsigned len, unsigned stale=250);
+            unsigned stale=10);
+        GridPacket(const uint8_t* data, unsigned len, unsigned stale=20);
         GridPacket(const GridPacket& other);
 
         bool operator<(const GridPacket& other) const;
@@ -59,7 +60,9 @@ class GridPacket
         Packet& get() const;
         uint8_t* raw();
         unsigned size();
+        uint32_t IDIDX();
 
+        void ring();
         bool isStale();
         bool isDead();
     
@@ -72,19 +75,11 @@ class GridPacket
 const unsigned MAX_GRIDPACKET_DATA = MAX_GRIDPACKET_SIZE - sizeof(GridPacket::Packet);
 const unsigned GRIDPACKET_HEADER_DATA_SIZE = sizeof(GridPacket::Packet) - sizeof(GridPacket::Packet::hhash);
 
-class PacketPriorityQueue : public MinPriorityQueue<GridPacket>, public Mutex
-{
-    public:
-        PacketPriorityQueue();
-
-        void push(GridPacket& pkt);
-};
-
 class PacketTranslator
 {
     public:
-        PacketPriorityQueue packets;
-        PacketPriorityQueue failed;
+        MinPriorityQueue<GridPacket> packets;
+        MinPriorityQueue<GridPacket> failed;
 
         void insert(uint8_t byte);
     

@@ -9,11 +9,12 @@
 #include "defines.h"
 #include "types.h"
 
-#include <Adafruit_NeoPixel.h>
+#include <FastLED.h>
 
 void runPixels(void* args)
 {
-    Adafruit_NeoPixel pixels(NUM_PXL, PXL_PIN, NEO_GRB + NEO_KHZ800);
+    CRGB leds[NUM_PXL];
+    FastLED.addLeds<WS2812, PXL_PIN, GRB>(leds, NUM_PXL);
     uint32_t notification = 0;
 
     struct Light
@@ -30,7 +31,8 @@ void runPixels(void* args)
         UPDATING,
         UPDATING_CHECK,
         REBOOTING1,
-        REBOOTING2
+        REBOOTING2,
+        SAFEMODE
     } state;
 
     EventScheduler sched;
@@ -45,6 +47,11 @@ void runPixels(void* args)
             {
                 if (state != UPDATING)
                     sched.schedule(UPDATING, 0);
+            }
+            else if (ota.isInSafeMode())
+            {
+                if (state != SAFEMODE)
+                    sched.schedule(SAFEMODE, 0);
             }
             else if (state != IDLE)
                 sched.schedule(IDLE, 0);
@@ -121,88 +128,172 @@ void runPixels(void* args)
                     state = REBOOTING2;
                     break;
                 }
+
+                case SAFEMODE:
+                {
+                    r.max = 255;
+                    g.max = 0;
+                    b.max = 0;
+                    r.offset = 1 / (float) NUM_PXL;
+                    r.rate.setHertz(2);
+                    state = SAFEMODE;
+                }
            }
            sched.currentEvents.pop();
         }
 
         for (unsigned i = 0; i < NUM_PXL; i++)
         {
-            pixels.setPixelColor(i, 
-                pixels.Color(
-                    r.rate.getStageCos(r.offset * i) * r.max, 
-                    g.rate.getStageCos(b.offset * i) * g.max, 
-                    b.rate.getStageCos(g.offset * i) * b.max));
+            leds[i].setRGB(
+                r.rate.getStageCos(r.offset * i) * r.max, 
+                g.rate.getStageCos(b.offset * i) * g.max, 
+                b.rate.getStageCos(g.offset * i) * b.max);
         }
 
-        pixels.show();
+        FastLED.show();
 
         if (notification & BIT(0) || state == REBOOTING2)
             vTaskDelete(NULL);
     }
 }
 
-struct TransferPacketArgs
-{
-    GridMessageHub* hub;
-    unsigned port;
-    SUART* suart;
+// struct TransferPacketArgs
+// {
+//     GridMessageHub* hub;
+//     unsigned port;
+//     SUART* suart;
 
-    TransferPacketArgs(GridMessageHub* hub, unsigned port, SUART* suart)
-        : hub(hub), port(port), suart(suart) {}
-};
+//     TransferPacketArgs(GridMessageHub* hub, unsigned port, SUART* suart)
+//         : hub(hub), port(port), suart(suart) {}
+// };
 
-void transferPackets(void* args)
-{
-    TransferPacketArgs* tpa = (TransferPacketArgs*) args;
-    uint32_t notification = 0;
+// void transferPackets(void* args)
+// {
+//     TransferPacketArgs* tpa = (TransferPacketArgs*) args;
+//     uint32_t notification = 0;
 
-    while (true)
-    {
-        xTaskNotifyWait(0, UINT32_MAX, &notification, 1 / portTICK_PERIOD_MS);
+//     while (true)
+//     {
+//         xTaskNotifyWait(0, UINT32_MAX, &notification, 1 / portTICK_PERIOD_MS);
+
+//         if (tpa->suart->read())
+//         {
+//             ByteStream* stream = tpa->suart->getRXStream();
+//             uint8_t buf[256];
+//             unsigned pulled;
+//             do
+//             {
+//                 unsigned pulled = stream->get(buf, sizeof(buf));
+//                 for (unsigned j = 0; j < pulled; ++j)
+//                     (*tpa->hub)[tpa->port].in.insert(buf[j]);
+//             } while (pulled);
+//         }
+
+//         //tpa->hub->updateTop(tpa->port);
+
+//         (*tpa->hub)[tpa->port].out.lock();
+//         while (!(*tpa->hub)[tpa->port].out.empty())
+//         {
+//             GridPacket pkt = (*tpa->hub)[tpa->port].out.top();
+//             (*tpa->hub)[tpa->port].out.pop();
+//             (*tpa->hub)[tpa->port].out.unlock();
+//             tpa->suart->write(pkt.raw(), pkt.size());
+//             (*tpa->hub)[tpa->port].out.lock();
+//         }
+//         (*tpa->hub)[tpa->port].out.unlock();
+
+//         if (notification & BIT(0))
+//         {
+//             delete args;
+//             vTaskDelete(NULL);
+//         }
+//     }
+// }
+
+// // void updateHub(void* args)
+// // {
+// //     GridMessageHub* hub = (GridMessageHub*) args;
+// //     uint32_t notification = 0;
+
+// //     while (true)
+// //     {
+// //         xTaskNotifyWait(0, UINT32_MAX, &notification, 1 / portTICK_PERIOD_MS);
         
-        if (tpa->suart->read())
-        {
-            ByteStream* stream = tpa->suart->getRXStream();
+// //         hub->update();
 
-            uint8_t buf[128];
-            unsigned pulled;
-            do
-            {
-                unsigned pulled = stream->get(buf, sizeof(buf));
-                for (unsigned i = 0; i < pulled; ++i)
-                    (*tpa->hub)[tpa->port].in.insert(buf[i]);
-            } while (pulled);
-        }
+// //         if (notification & BIT(0))
+// //             vTaskDelete(NULL);
+// //     }
+// // }
 
-        (*tpa->hub)[tpa->port].out.lock();
-        while (!(*tpa->hub)[tpa->port].out.empty())
-        {
-            GridPacket& pkt = (*tpa->hub)[tpa->port].out.top();
-            tpa->suart->write(pkt.raw(), pkt.size());
-            (*tpa->hub)[tpa->port].out.pop();
-        }
-        (*tpa->hub)[tpa->port].out.unlock();
+// // struct UpdateFullArgs
+// // {
+// //     GridMessageHub* hub;
+// //     SUART* suarts[2];
 
-        if (notification & BIT(0))
-        {
-            delete args;
-            vTaskDelete(NULL);
-        }
-    }
-}
+// //     UpdateFullArgs(GridMessageHub& hub, SUART& suartPort0, SUART& suartPort1)
+// //         : hub(&hub)
+// //     {
+// //         suarts[0] = &suartPort0;
+// //         suarts[1] = &suartPort1;
+// //     }
+// // };
 
-void updateHub(void* args)
-{
-    GridMessageHub* hub = (GridMessageHub*) args;
-    uint32_t notification = 0;
+// // #include "microcode/util/log.h"
 
-    while (true)
-    {
-        xTaskNotifyWait(0, UINT32_MAX, &notification, 1 / portTICK_PERIOD_MS);
+// // void updateFull(void* args)
+// // {
+// //     UpdateFullArgs* ufa = (UpdateFullArgs*) args;
+// //     uint32_t notification = 0;
+
+// //     while (true)
+// //     {
+// //         xTaskNotifyWait(0, UINT32_MAX, &notification, 1 / portTICK_PERIOD_MS);
         
-        hub->update();
+// //         // uint64_t start = sysTime();
+// //         for (unsigned i = 0; i < 2; ++i)
+// //         {
+// //             if (ufa->suarts[i]->read())
+// //             {
+// //                 ByteStream* stream = ufa->suarts[i]->getRXStream();
 
-        if (notification & BIT(0))
-            vTaskDelete(NULL);
-    }
-}
+// //                 uint8_t buf[256];
+// //                 unsigned pulled;
+// //                 do
+// //                 {
+// //                     unsigned pulled = stream->get(buf, sizeof(buf));
+// //                     for (unsigned j = 0; j < pulled; ++j)
+// //                         (*ufa->hub)[i].in.insert(buf[j]);
+// //                 } while (pulled);
+// //             }
+// //         }
+// //         // uint64_t end1 = sysTime();
+        
+// //         ufa->hub->update();
+// //         // uint64_t end2 = sysTime();
+
+// //         for (unsigned i = 0; i < 2; ++i)
+// //         {
+// //             (*ufa->hub)[i].out.lock();
+// //             while (!(*ufa->hub)[i].out.empty())
+// //             {
+// //                 GridPacket pkt = (*ufa->hub)[i].out.top();
+// //                 (*ufa->hub)[i].out.pop();
+// //                 (*ufa->hub)[i].out.unlock();
+// //             }
+// //         }
+// //         // uint64_t end3 = sysTime();
+
+// //         // Log("time1") << end1 - start;
+// //         // Log("time2") << end2 - end1;
+// //         // Log("time3") << end3 - end2;
+// //         // Log("time ") << end3 - start;
+
+
+// //         if (notification & BIT(0))
+// //         {
+// //             delete ufa;
+// //             vTaskDelete(NULL);
+// //         }
+// //     }
+// // }

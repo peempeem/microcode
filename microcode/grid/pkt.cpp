@@ -66,35 +66,33 @@ unsigned GridPacket::size()
     return _buf.size();
 }
 
+uint32_t GridPacket::IDIDX()
+{
+    return (((uint32_t) get().id) << 16) + get().idx;
+}
+
+void GridPacket::ring()
+{
+    _stale.ring();
+}
+
 bool GridPacket::isStale()
 {
-    bool stale = _stale.isRinging();
-    if (stale & !isDead())
+    if (isDead())
+        return false;
+    
+    if (_stale.isRinging())
     {
-        if (_retries)
-            _retries--;
+        _retries--;
         _stale.reset();
+        return true;
     }
-    return stale;
+    return false;
 }
 
 bool GridPacket::isDead()
 {
-    return _retries;
-}
-
-//
-//// PacketPriorityQueue Class
-//
-
-PacketPriorityQueue::PacketPriorityQueue() : MinPriorityQueue<GridPacket>(), Mutex()
-{
-
-}
-
-void PacketPriorityQueue::push(GridPacket& pkt)
-{
-    MinPriorityQueue::push(pkt, pkt.get().priority);
+    return !_retries;
 }
 
 //
@@ -111,9 +109,7 @@ void PacketTranslator::insert(uint8_t byte)
             if (!((GridPacket::Packet*) &_pbuf.packet)->len)
             {
                 GridPacket pkt((uint8_t*) &_pbuf.packet, sizeof(GridPacket::Packet) + ((GridPacket::Packet*) &_pbuf.packet)->len);
-                packets.lock();
-                packets.push(pkt);
-                packets.unlock();
+                packets.push(pkt, pkt.get().priority);
             }
             else
             {
@@ -130,16 +126,12 @@ void PacketTranslator::insert(uint8_t byte)
             if (((GridPacket::Packet*) &_pbuf.packet)->dhash == hash32(_pbuf.data, _idx))
             {
                 GridPacket pkt((uint8_t*) &_pbuf.packet, sizeof(GridPacket::Packet) + ((GridPacket::Packet*) &_pbuf.packet)->len);
-                packets.lock();
-                packets.push(pkt);
-                packets.unlock();
+                packets.push(pkt, pkt.get().priority);
             }
             else
             {
                 GridPacket pkt((uint8_t*) &_pbuf.packet, sizeof(GridPacket::Packet));
-                failed.lock();
-                failed.push(pkt);
-                failed.unlock();
+                failed.push(pkt, pkt.get().priority);
             }
             _foundHead = false;
         }

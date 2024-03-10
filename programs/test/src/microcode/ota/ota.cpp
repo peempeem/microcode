@@ -15,6 +15,7 @@ static Mutex lock;
 static volatile int updateSize = -1;
 static volatile bool running = false;
 static volatile bool safeMode = false;
+static volatile bool safeModeTriggered = false;
 static volatile bool rebooting = false;
 static volatile uint64_t rebootTime;
 
@@ -36,7 +37,7 @@ void update(void* args)
     bool bootSuccess = false;
     while (true)
     {
-        xTaskNotifyWait(0, UINT32_MAX, &notification, 1 / portTICK_PERIOD_MS);
+        xTaskNotifyWait(0, UINT32_MAX, &notification, 20 / portTICK_PERIOD_MS);
         server.handleClient();
 
         lock.lock();
@@ -141,7 +142,7 @@ unsigned OTAUpdater::init(unsigned port, bool safemode)
 
     // start server
     server.begin();
-    xTaskCreateUniversal(update, "ota_backend", 4 * 1024, NULL, 20, NULL, tskNO_AFFINITY);
+    xTaskCreateUniversal(update, "ota_backend", 4 * 1024, NULL, 20, NULL, 0);
 
     Log(LOG_HEADER) << "Update Server started";
 
@@ -161,15 +162,23 @@ unsigned OTAUpdater::init(unsigned port, bool safemode)
         {
             Log(LOG_HEADER) << "Entering safemode blocking procedure. Waiting for update ...";
             Log(LOG_HEADER) << "boot attempts: " << smvar.data.bootAttempts << " boot successes: " << smvar.data.bootSuccesses;
+
+            safeModeTriggered = true;
             
             while (true)
             {
+                lock.unlock();
                 Timer t(smvar.data.bootTimeout);
-                while (!t.isRinging());
+                while (!t.isRinging())
+                    sysSleep(5);
+                
+                lock.lock();
 
                 if (!isRebooting() || !isUpdating())
                 {
                     Log(LOG_HEADER) << "No update received. Proceeding with normal boot";
+                    filesys.remove(safeModeFile);
+                    safeModeTriggered = false;
                     break;
                 }
             }
@@ -184,16 +193,15 @@ unsigned OTAUpdater::init(unsigned port, bool safemode)
 
 bool OTAUpdater::isUpdating()
 {
-    lock.lock();
-    bool ret = updateSize != -1;
-    lock.unlock();
-    return ret;
+    return updateSize != -1;
 }
 
 bool OTAUpdater::isRebooting()
 {
-    lock.lock();
-    bool ret = rebooting;
-    lock.unlock();
-    return ret;
+    return rebooting;
+}
+
+bool OTAUpdater::isInSafeMode()
+{
+    return safeModeTriggered;
 }

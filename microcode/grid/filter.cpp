@@ -12,6 +12,8 @@ IDFilter::IDFilter(unsigned timeout) : _timeout(timeout)
 
 bool IDFilter::contains(unsigned id, bool add)
 {
+    _preen();
+
     if (_timestamps.contains(id))
         return true;
     
@@ -29,7 +31,13 @@ void IDFilter::remove(unsigned id)
     _timestamps.remove(id);
 }
 
-void IDFilter::preen()
+unsigned IDFilter::size()
+{
+    _preen();
+    return _timestamps.size();
+}
+
+void IDFilter::_preen()
 {
     while (!_next.empty())
     {
@@ -42,9 +50,4 @@ void IDFilter::preen()
         else
             break;
     }
-}
-
-unsigned IDFilter::size()
-{
-    return _timestamps.size();
 }

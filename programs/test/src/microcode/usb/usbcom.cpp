@@ -66,7 +66,7 @@ unsigned USBMessageBroker::Message::size()
 
 void USBMessageBroker::MessageQueue::push(Message& msg)
 {
-    MinPriorityQueue::push(msg, msg.get().header.priority);
+    MinPriorityQueue<Message>::push(msg, msg.get().header.priority);
 }
 
 //
@@ -89,12 +89,12 @@ void USBMessageBroker::update()
     if (!_tx || !_rx)
         return;
     
-    uint8_t buf[128];
+    uint8_t buf[256];
     unsigned pulled;
     do
     {
-        pulled = _rx->get(buf, 128);
-        for (unsigned i = 0; i < sizeof(buf); ++i)
+        pulled = _rx->get(buf, sizeof(buf));
+        for (unsigned i = 0; i < pulled; ++i)
         {
             if (!_foundHead)
             {
@@ -143,12 +143,17 @@ void USBMessageBroker::update()
         
     } while (pulled);
 
-    while (_rmsgs.size())
+    while (!_rmsgs.empty())
     {
-        switch (_rmsgs.top().get().header.type)
+        Message& msg = _rmsgs.top();
+        switch (msg.get().header.type)
         {
             case ReservedTypes::ping:
-                _send(ReservedTypes::reping, _rmsgs.topPriority(), _rmsgs.top().get().data, _rmsgs.top().get().header.len);
+                _send(
+                    ReservedTypes::reping, 
+                    msg.get().header.priority, 
+                    msg.get().data, 
+                    msg.get().header.len);
                 break;
             
             default:
@@ -158,7 +163,7 @@ void USBMessageBroker::update()
     }
 
     _smsgs.lock();
-    while (_smsgs.size())
+    while (!_smsgs.empty())
     {
         _tx->put(_smsgs.top().raw(), _smsgs.top().size());
         _smsgs.pop();

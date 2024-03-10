@@ -6,6 +6,18 @@ const static char* LogHeader = "SUART";
 #define BUF_SLICE           128
 #define MIN_RINGBUF_SIZE    256
 
+bool maybe_send_bytes(SUART::BackendData* backend, uint8_t* bytes, unsigned size)
+{
+    size_t bufSize;
+    uart_get_tx_buffer_free_size(backend->port, &bufSize);
+    if (size <= bufSize)
+    {
+        uart_write_bytes(backend->port, bytes, size);
+        return true;
+    }
+    return false;
+}
+
 void send_bytes(SUART::BackendData* backend)
 {
     size_t bufSize;
@@ -150,7 +162,7 @@ bool SUART::init(
     _usingTask = usingTask;
 
     if (_usingTask)
-        xTaskCreateUniversal(SUARTBackend, "suartbackend", 3 * 1024, (void*) _backend, configMAX_PRIORITIES - 5, &_task, tskNO_AFFINITY);
+        xTaskCreateUniversal(SUARTBackend, "suartbackend", 3 * 1024, (void*) _backend, configMAX_PRIORITIES - 3, &_task, tskNO_AFFINITY);
     
     return true;
 }
@@ -193,6 +205,13 @@ bool SUART::write()
         return false;
     send_bytes(_backend);
     return true;
+}
+
+bool SUART::writeBypass(uint8_t* data, unsigned len)
+{
+    if (!_backend)
+        return false;
+    return maybe_send_bytes(_backend, data, len);
 }
 
 bool SUART::read()

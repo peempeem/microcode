@@ -40,13 +40,13 @@ void SharedBuffer::operator=(const SharedBuffer& other)
     _copy(other);
 }
 
-void SharedBuffer::lock()
+void SharedBuffer::lock() const
 {
     if (_buf)
         ((SharedBufferData*) _buf)->lock.lock();
 }
 
-void SharedBuffer::unlock()
+void SharedBuffer::unlock() const
 {
     if (_buf)
         ((SharedBufferData*) _buf)->lock.unlock();

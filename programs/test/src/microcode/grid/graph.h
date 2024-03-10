@@ -1,15 +1,13 @@
 #pragma once
 
 #include "table.h"
+#include "../util/rwlock.h"
 
-class GridGraph
+class GridGraph : public ReadWriteLock
 {
     public:
-        GridGraph();
-
         void representTable(NetworkTable& table);
         void path(std::vector<uint16_t>& p, uint16_t start, uint16_t end);
-        void pathBFS(std::vector<uint16_t>& p, uint16_t start, uint16_t end);
         std::string toString();
         std::string pathToString(std::vector<uint16_t>& p);
     
@@ -38,7 +36,6 @@ class GridGraph
         std::vector<uint16_t> _toID;
 
         Hash<std::vector<DijkstraData>> _data;
-        Hash<std::vector<uint16_t>> _bfsData;
 
         void _extractPath(std::vector<uint16_t>& p, uint16_t start, uint16_t end, std::vector<DijkstraData>& data);
 };

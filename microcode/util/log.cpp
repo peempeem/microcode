@@ -13,7 +13,7 @@ static void setStream(ByteStream* newStream)
     lock.lock();
     if (reserves && !reserves->isEmpty())
     {
-        uint8_t buf[128];
+        uint8_t buf[256];
         unsigned pulled;
         do
         {
@@ -137,7 +137,7 @@ void Log::disable()
     lock.lock();
     if (reserves)
     {
-        uint8_t buf[128];
+        uint8_t buf[256];
         unsigned pulled;
         do
             pulled = reserves->get(buf, sizeof(buf));

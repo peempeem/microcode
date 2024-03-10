@@ -9,10 +9,10 @@ from rich.console import Console
 import rich
 import math
 
-hosts = ['module1', 'module2', 'module3', 'module4', 'controller', 'test2']
+hosts = [f'module{i}' for i in range(8)]
 
 class Updater:
-    def __init__(self, path, host, proc=mp.Process):
+    def __init__(self, path, host, proc=mp.Process, retries=5):
         self._path = path
         self._host = host
         self._bytes_read = 0
@@ -20,6 +20,7 @@ class Updater:
         self._running = True
         self._success = False
         self._dt = 0
+        self._retries = retries
         self._q = mp.Queue()
         self._proc = proc(target=self._update, args=(self._q, ))
         self._proc.start()
@@ -69,15 +70,17 @@ class Updater:
     def _update(self, q):
         start = time.time()
         self._q = q
-        try:
-            encoder = MultipartEncoder(fields={'file': (os.path.basename(self._path), open(self._path, 'rb'))})
-            monitor = MultipartEncoderMonitor(encoder, self._updateCB)
-            url = f'http://{self._host}.local/ota/update'
-            response = requests.post(url, data=monitor, headers={'Content-Type': encoder.content_type})
-            if "update successful" in response.text:
-                self._q.put({'success': True})
-        except:
-            pass
+        for _ in range(self._retries):
+            try:
+                encoder = MultipartEncoder(fields={'file': (os.path.basename(self._path), open(self._path, 'rb'))})
+                monitor = MultipartEncoderMonitor(encoder, self._updateCB)
+                url = f'http://{self._host}.local/ota/update'
+                response = requests.post(url, data=monitor, headers={'Content-Type': encoder.content_type})
+                if "update successful" in response.text:
+                    self._q.put({'success': True})
+                break
+            except:
+                pass
         self._q.put({'dt': time.time() - start})
         self._q.put({'running': False})
 

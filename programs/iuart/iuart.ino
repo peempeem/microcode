@@ -6,15 +6,12 @@
 #include "src/microcode/usb/usbcom.h"
 
 Rate r(1);
-Rate r2(0.1);
+Rate r2(100);
 Rate r3(1);
 
 GridMessageHub base(1);
 GridMessageHub hubs[] = 
 {
-    GridMessageHub(2),
-    GridMessageHub(2),
-    GridMessageHub(2),
     GridMessageHub(2),
     GridMessageHub(1)
 };
@@ -22,91 +19,69 @@ GridMessageHub hubs[] =
 SharedGridBuffer sharedStates[] = 
 {
     SharedGridBuffer("RobotState", (int) GridMessageHub::Priority::USER),
-    SharedGridBuffer("RobotState", (int) GridMessageHub::Priority::USER),
-    SharedGridBuffer("RobotState", (int) GridMessageHub::Priority::USER),
-    SharedGridBuffer("RobotState", (int) GridMessageHub::Priority::USER),
-    SharedGridBuffer("RobotState", (int) GridMessageHub::Priority::USER),
+    SharedGridBuffer("RobotState", (int) GridMessageHub::Priority::USER)
 };
-
-USBMessageBroker usb;
 
 #define linkspeed 10000
 
-void sendPackets(GridMessageHub& h0, GridMessageHub& h1, unsigned b0, unsigned b1)
-{
-    h0[b0].out.lock();
-    while (!h0[b0].out.empty())
-    {
-        GridPacket& pkt = h0[b0].out.top();
-        for (unsigned i = 0; i < pkt.size(); i++)
-            h1[b1].in.insert(pkt.raw()[i]);
-        h0[b0].out.pop();
-    }
-    h0[b0].out.unlock();
+ByteStream base0RX_hub00TX;
+ByteStream base0TX_hub00RX;
+ByteStream hub01RX_hub10TX;
+ByteStream hub01TX_hub10RX;
 
-    h1[b1].out.lock();
-    while (!h1[b1].out.empty())
-    {  
-        GridPacket& pkt = h1[b1].out.top();
-        for (unsigned i = 0; i < pkt.size(); i++)
-            h0[b0].in.insert(pkt.raw()[i]);
-        h1[b1].out.pop();
-    }
-    h1[b1].out.unlock();
-}
-
-void wastePackets(GridMessageHub& h, unsigned b)
+struct RunTopArgs
 {
-    while (!h[b].out.empty())
-        h[b].out.pop();
-}
+    GridMessageHub* hub;
+    unsigned port;
 
-void updateHub(void* args)
+    RunTopArgs(GridMessageHub& hub, unsigned port) : hub(&hub), port(port) {}
+};
+
+void runTop(void* args)
 {
-    uint32_t notification = 0;
+    RunTopArgs* rta = (RunTopArgs*) args;
+    uint32_t notification;
 
     while (true)
     {
-        xTaskNotifyWait(0, UINT32_MAX, &notification, 2 / portTICK_PERIOD_MS);
-        base.update();
-        for (unsigned i = 0; i < sizeof(hubs) / sizeof(GridMessageHub); i++)
-            hubs[i].update();
-
-        if (notification & BIT(0))
-            vTaskDelete(NULL);
+        rta->hub->updateTop(rta->port);
+        xTaskNotifyWait(0, UINT32_MAX, &notification, 1);
     }
 }
 
-void transportPackets(void* args)
+struct RunBottomArgs
 {
-    uint32_t notification = 0;
+    GridMessageHub* hub;
+    TaskHandle_t handle0;
+    TaskHandle_t handle1;
 
-    while (true)
+    RunBottomArgs(GridMessageHub& hub, TaskHandle_t handle0) 
+        : hub(&hub)
     {
-        xTaskNotifyWait(0, UINT32_MAX, &notification, 2 / portTICK_PERIOD_MS);
-        sendPackets(base, hubs[0], 0, 1);
-        for (unsigned i = 0; i < (sizeof(hubs) / sizeof(GridMessageHub)) - 2; ++i)
-            sendPackets(hubs[i], hubs[i + 1], 0, 1);
-        sendPackets(hubs[3], hubs[4], 0, 0);
-
-        if (notification & BIT(0))
-            vTaskDelete(NULL);
+        this->handle0 = handle0;
+        this->handle1 = NULL;
     }
-}
 
-void updateUSB(void* args)
+    RunBottomArgs(GridMessageHub& hub, TaskHandle_t handle0, TaskHandle_t handle1) 
+        : hub(&hub)
+    {
+        this->handle0 = handle0;
+        this->handle1 = handle1;
+    }
+};
+
+void runBottom(void* args)
 {
-    uint32_t notification = 0;
+    RunBottomArgs* rba = (RunBottomArgs*) args;
+    uint32_t notification;
 
     while (true)
     {
-        xTaskNotifyWait(0, UINT32_MAX, &notification, 2 / portTICK_PERIOD_MS);
-        suart0.read();
-        usb.update();
-        suart0.write();
-
-        if (notification & BIT(0))
-            vTaskDelete(NULL);
+        rba->hub->updateBottom();
+        xTaskNotify(rba->handle0, 0, eNoAction);
+        if (rba->handle1)
+            xTaskNotify(rba->handle1, 0, eNoAction);
+        xTaskNotifyWait(0, UINT32_MAX, &notification, 1);
     }
 }
 
@@ -123,59 +98,121 @@ void setup()
         hubs[i].listenFor(sharedStates[i]);
 
     base.setLinkSpeed(0, linkspeed);
-    for (unsigned i = 0; i < sizeof(hubs) / sizeof(GridMessageHub) - 1; ++i)
-    {
-        hubs[i].setLinkSpeed(0, linkspeed);
-        hubs[i].setLinkSpeed(1, linkspeed);
-    }
-    hubs[4].setLinkSpeed(0, linkspeed);
+    hubs[0].setLinkSpeed(0, linkspeed);
+    hubs[0].setLinkSpeed(1, linkspeed);
+    hubs[1].setLinkSpeed(0, linkspeed);
 
     base.setName("base");
     hubs[0].setName("module0");
     hubs[1].setName("module1");
-    hubs[2].setName("module2");
-    hubs[3].setName("module3");
-    hubs[4].setName("module4");
 
-    usb.attachStreams(suart0.getTXStream(), suart0.getRXStream());
+    base.setInputStream(0, base0RX_hub00TX);
+    base.setOutputStream(0, base0TX_hub00RX);
+    hubs[0].setInputStream(0, base0TX_hub00RX);
+    hubs[0].setOutputStream(0, base0RX_hub00TX);
+    hubs[0].setInputStream(1, hub01RX_hub10TX);
+    hubs[0].setOutputStream(1, hub01TX_hub10RX);
+    hubs[1].setInputStream(0, hub01TX_hub10RX);
+    hubs[1].setOutputStream(0, hub01RX_hub10TX);
 
-    xTaskCreateUniversal(transportPackets, "transport", 4 * 1024, NULL, 11, NULL, tskNO_AFFINITY);
-    xTaskCreateUniversal(updateHub, "updatehub", 4 * 1024, NULL, 10, NULL, tskNO_AFFINITY);
-    //xTaskCreateUniversal(updateUSB, "updateUSB", 4 * 1024, NULL, 12, NULL, tskNO_AFFINITY);
+    TaskHandle_t base0Handle;
+    xTaskCreateUniversal(
+        runTop, 
+        "runtop", 
+        1024 * 5,
+        new RunTopArgs(base, 0),
+        10,
+        &base0Handle,
+        tskNO_AFFINITY);
+    
+    TaskHandle_t hub00Handle;
+    xTaskCreateUniversal(
+        runTop, 
+        "runtop", 
+        1024 * 5,
+        new RunTopArgs(hubs[0], 0),
+        10,
+        &hub00Handle,
+        tskNO_AFFINITY);
+
+    TaskHandle_t hub01Handle;
+    xTaskCreateUniversal(
+        runTop, 
+        "runtop", 
+        1024 * 5,
+        new RunTopArgs(hubs[0], 1),
+        10,
+        &hub01Handle,
+        tskNO_AFFINITY);
+    
+    TaskHandle_t hub10Handle;
+    xTaskCreateUniversal(
+        runTop, 
+        "runtop", 
+        1024 * 5,
+        new RunTopArgs(hubs[1], 0),
+        10,
+        &hub10Handle,
+        tskNO_AFFINITY);
+    
+    xTaskCreateUniversal(
+        runBottom, 
+        "runbot", 
+        1024 * 5,
+        new RunBottomArgs(base, base0Handle),
+        5,
+        NULL,
+        tskNO_AFFINITY);
+    
+    xTaskCreateUniversal(
+        runBottom, 
+        "runbot", 
+        1024 * 5,
+        new RunBottomArgs(hubs[0], hub00Handle, hub01Handle),
+        5,
+        NULL,
+        tskNO_AFFINITY);
+
+    xTaskCreateUniversal(
+        runBottom, 
+        "runbot", 
+        1024 * 5,
+        new RunBottomArgs(hubs[1], hub10Handle),
+        5,
+        NULL,
+        tskNO_AFFINITY);
 }
 
 void loop()
-{
-    // if (r.isReady())
-    // {
-    //     //Log("MemoryUsage") << sysMemUsage();
+{ 
+    if (r2.isReady())
+    {
+        for (unsigned i = 0; i < sizeof(hubs) / sizeof(GridMessageHub); ++i)
+        {
+            std::stringstream ss;
+            ss << sysTime() << " hub" << i;
+            std::string str = ss.str();
+            SharedBuffer buf = SharedBuffer((const uint8_t*) &str[0], str.size() + 1);
+            buf.data()[buf.size() - 1] = 0;
+            sharedStates[i].lock();
+            sharedStates[i].touch(hubs[i].id()) = buf;
+            sharedStates[i].unlock();
+        }
+    }
 
-    //     for (unsigned i = 0; i < sizeof(hubs) / sizeof(GridMessageHub) - 1; ++i)
-    //     {
-    //         std::stringstream ss;
-    //         ss << sysTime() << " hub" << i;
-    //         std::string str = ss.str();
-    //         SharedBuffer buf = SharedBuffer((const uint8_t*) &str[0], str.size() + 1);
-    //         buf.data()[buf.size() - 1] = 0;
-    //         sharedStates[i].lock();
-    //         sharedStates[i].touch(hubs[i].id()) = buf;
-    //         sharedStates[i].unlock();
-    //     }
-    // }
-
-    // for (unsigned i = 0; i < sizeof(hubs) / sizeof(GridMessageHub) - 1; ++i)
-    // {
-    //     sharedStates[i].lock();
-    //     for (auto it = sharedStates[i].data.begin(); it != sharedStates[i].data.end(); ++it)
-    //     {
-    //         if (sharedStates[i].canRead(it.key()))
-    //             Log("sharedstate") << "hub " << i << "id: " << hubs[i].id() << " _id: " << it.key() << " arrive: " << it->arrival << " msg: " << (char*) it->buf.data(); 
-    //     }
-    //     sharedStates[i].unlock();
-    // }
+    for (unsigned i = 0; i < sizeof(hubs) / sizeof(GridMessageHub); ++i)
+    {
+        sharedStates[i].lock();
+        for (auto it = sharedStates[i].data.begin(); it != sharedStates[i].data.end(); ++it)
+        {
+            if (sharedStates[i].canRead(it.key()))
+                Log("sharedstate") << "hub " << i << "id: " << hubs[i].id() << " _id: " << it.key() << " arrive: " << it->arrival << " msg: " << (char*) it->buf.data(); 
+        }
+        sharedStates[i].unlock();
+    }
 
     ByteStream* rx = suart0.getRXStream();
-    uint8_t buf[128];
+    uint8_t buf[256];
     unsigned pulled;
     do
     {
@@ -190,7 +227,11 @@ void loop()
     if (r.isReady())
     {
         NetworkTable::Nodes nodes = base.getTableNodes();
+        GridGraph g;
+        base.getGraph(g);
         Log("base") << nodes.toString();
+        Log("base") << g.toString();
+        Log("MemoryUsage") << sysMemUsage();
     }
 
     // if (r2.isReady())

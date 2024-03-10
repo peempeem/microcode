@@ -35,6 +35,7 @@ class SUART
 
         bool write(uint8_t* data, unsigned len);
         bool write();
+        bool writeBypass(uint8_t* data, unsigned len);
         bool read();
 
         ByteStream* getTXStream() { return (_backend) ? &_backend->tx : NULL; }

@@ -1,10 +1,10 @@
 #pragma once
 
-#include "spinlock.h"
+#include "mutex.h"
 #include <queue>
 #include <streambuf>
 
-class ByteStream : protected SpinLock
+class ByteStream : protected Mutex
 {
     public:
         void put(const uint8_t* buf, unsigned len);
@@ -16,10 +16,12 @@ class ByteStream : protected SpinLock
     private:
         struct ByteStreamBuffer
         {
-            volatile uint16_t read = 0;
-            uint16_t write = 0;
+            volatile unsigned read = 0;
+            unsigned write = 0;
             uint8_t data[512];
         };
 
+        Mutex _read;
+        Mutex _write;
         std::queue<ByteStreamBuffer> _bufs;
 };

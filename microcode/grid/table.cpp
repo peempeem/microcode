@@ -148,7 +148,6 @@ void NetworkTable::update()
         filter.contains(currentRandom);
         filterTimer.reset();
     }
-    filter.preen();
 }
 
 void NetworkTable::writeNode(unsigned id, Node& node)

@@ -2,6 +2,7 @@
 
 void ByteStream::put(const uint8_t* buf, unsigned len)
 {
+    _write.lock();
     lock();
     if (_bufs.empty())
         _bufs.emplace();
@@ -22,10 +23,12 @@ void ByteStream::put(const uint8_t* buf, unsigned len)
         sbuf->data[sbuf->read] = buf[written++];
         sbuf->read++;
     }
+    _write.unlock();
 }
 
 void ByteStream::put(std::streambuf& buf)
 {
+    _write.lock();
     lock();
     if (_bufs.empty())
         _bufs.emplace();
@@ -47,22 +50,25 @@ void ByteStream::put(std::streambuf& buf)
         sbuf->read++;
         next = buf.sbumpc();
     }
+    _write.unlock();
 }
 
 bool ByteStream::isEmpty()
 {
     lock();
-    bool ret = _bufs.empty() || _bufs.size() > 1 || _bufs.front().read == _bufs.front().write;
+    bool ret = _bufs.empty() || _bufs.size() > 1 || _bufs.front().read != _bufs.front().write;
     unlock();
     return ret;
 }
 
 unsigned ByteStream::get(uint8_t* buf, unsigned max)
 {
+    _read.lock();
     lock();
     if (_bufs.empty())
     {
         unlock();
+        _read.unlock();
         return 0;
     }
     
@@ -74,28 +80,27 @@ unsigned ByteStream::get(uint8_t* buf, unsigned max)
     {
         if (sbuf->write == sbuf->read)
         {
-            if (sbuf->write == (unsigned) sizeof(ByteStreamBuffer::data))
+            if (sbuf->write != (unsigned) sizeof(ByteStreamBuffer::data))
+                break;
+            
+            lock();
+            _bufs.pop();
+            
+            if (_bufs.empty())
             {
-                lock();
-                _bufs.pop();
-                
-                if (_bufs.empty())
-                {
-                    unlock();
-                    break;
-                }
-
-                sbuf = &_bufs.front();
                 unlock();
-
-                if (sbuf->write >= sbuf->read)
-                    break;
+                break;
             }
-            else
+
+            sbuf = &_bufs.front();
+            unlock();
+
+            if (sbuf->write >= sbuf->read)
                 break;
         }
 
         buf[read++] = sbuf->data[sbuf->write++];
     }
+    _read.unlock();
     return read;
 }

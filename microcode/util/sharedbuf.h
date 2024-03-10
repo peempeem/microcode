@@ -18,8 +18,8 @@ class SharedBuffer
 
         void resize(unsigned sz);
 
-        void lock();
-        void unlock();
+        void lock() const;
+        void unlock() const;
 
         unsigned users() const;
         uint8_t* data() const;
