@@ -69,10 +69,18 @@ PACK(struct SetDrivers
     StageState::Drivers drivers;
 });
 
+PACK(struct SetBuf
+{
+    uint8_t stage;
+    uint8_t data[];
+});
+
 USBMessageBroker usb;
 GridMessageHub hub(1);
 SharedGridBuffer robotState("RobotState", (int) GridMessageHub::Priority::USER);
-SharedGridBuffer robotControl("RobotControl", (int) GridMessageHub::Priority::USER, 1e6, 15);
+SharedGridBuffer robotControl("RobotControl", (int) GridMessageHub::Priority::USER);
+SharedGridBuffer robotLighting("RobotLighting", (int) GridMessageHub::Priority::USER);
+
 Hash<unsigned> toID;
 Hash<unsigned> fromID;
 Rate graphSend(1);
@@ -89,7 +97,7 @@ StageState tempSS;
 
 void setup()
 {
-    suart0.init(1e6, 3, 1, false);
+    suart0.init(BAUD, 3, 1, false);
     Log() >> *suart0.getTXStream();
     usb.attachStreams(suart0.getTXStream(), suart0.getRXStream());
     
@@ -112,7 +120,10 @@ void setup()
     hub.setName("base");
     hub.listenFor(robotState);
     hub.listenFor(robotControl);
+    hub.listenFor(robotLighting);
 }
+
+Rate updateRate(50);
 
 void loop()
 {
@@ -189,23 +200,41 @@ void loop()
                     buf.resize(sizeof(StageState::Drivers));
                     *((StageState::Drivers*) buf.data()) = sd->drivers;
                     robotControl.unlock();
-                    // std::stringstream ss;
-                    // ss << "SENT " << (int) sd->stage << " " << usb.messages.size();
-                    // std::string s = ss.str();
-                    // usb.send(100, 0, (uint8_t*) &s[0], s.size());
+                    break;
                 }
-                // else
-                // {
-                //     std::stringstream ss;
-                //     ss << "Failed " << (int) sd->stage << " " << usb.messages.size();
-                //     std::string s = ss.str();
-                //     usb.send(100, 0, (uint8_t*) &s[0], s.size());
-                // }
+            }
+
+            case 5:
+            {
+                SetBuf* sb = (SetBuf*) msg.get().data;
+                unsigned* id = toID.at(sb->stage);
+                if (id)
+                {
+                    robotLighting.lock();
+                    SharedBuffer& buf = robotLighting.touch(*id);
+                    buf.resize(msg.get().header.len - sizeof(SetBuf));
+                    memcpy(buf.data(), sb->data, msg.get().header.len - sizeof(SetBuf));
+                    robotLighting.unlock();
+                }
+                break;
             }
         }
         usb.messages.pop();
     }
 
+    if (updateRate.isReady())
+    {
+        robotControl.lock();
+        for (auto it = robotControl.data.begin(); it != robotControl.data.end(); ++it)
+            robotControl.touch(it.key());
+        robotControl.unlock();
+
+        robotLighting.lock();
+        for (auto it = robotLighting.data.begin(); it != robotLighting.data.end(); ++it)
+            robotLighting.touch(it.key());
+        robotLighting.unlock();
+    }
+    
     robotState.lock();
     for (auto it = robotState.data.begin(); it != robotState.data.end(); ++it)
     {
@@ -228,6 +257,7 @@ void loop()
         }
     }
     robotState.unlock();
+
 
     // if (graphSend.isReady())
     // {

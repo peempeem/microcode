@@ -233,10 +233,10 @@ void GridMessageHub::updateTop(unsigned port)
         if (pkt.get().retries)
         {
             // if already in filter send Ack else send NAck
-            _filterLock.lock();
-            unsigned toAck = (_filters[pkt.get().sender].contains(pkt.IDIDX(), false)) ? ACK : NACK;
-            _filterLock.unlock();
-            ackNAcks.emplace_back(pkt, toAck);
+            // _filterLock.lock();
+            // unsigned toAck = (_filters[pkt.get().sender].contains(pkt.IDIDX(), false)) ? ACK : NACK;
+            // _filterLock.unlock();
+            ackNAcks.emplace_back(pkt, NACK);
         }
 
         // packet is malformed and does not have retries but has longAckNack
@@ -330,8 +330,8 @@ void GridMessageHub::updateBottom()
                         
                         if (td->sender == _id && !_table.filter.contains(td->rand, false))
                         {
-                            _kill(_id);
-                            _newID();
+                            // _kill(_id);
+                            // _newID();
                         }
 
                         _nodeLock.lock();
@@ -554,7 +554,7 @@ void GridMessageHub::updateBottom()
     {
         if (!_table.nodes.contains(it.key()))
         {
-            _kill(it.key());
+            //_kill(it.key());
             _pings.remove(it);
         }
         else if (it.key() == _id)

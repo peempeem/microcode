@@ -11,8 +11,27 @@
 
 #include <FastLED.h>
 
+struct RunPixelsArgs
+{
+    bool set = false;
+    CRGB leds[NUM_PXL];
+    SpinLock lock;
+    Timer timer = Timer(1000);
+
+    bool isSet()
+    {
+        lock.lock();
+        if (set && timer.isRinging())
+            set = false;
+        bool s = set;
+        lock.unlock();
+        return s;
+    }
+};
+
 void runPixels(void* args)
 {
+    RunPixelsArgs* rpa = (RunPixelsArgs*) args;
     CRGB leds[NUM_PXL];
     FastLED.addLeds<WS2812, PXL_PIN, GRB>(leds, NUM_PXL);
     uint32_t notification = 0;
@@ -32,7 +51,8 @@ void runPixels(void* args)
         UPDATING_CHECK,
         REBOOTING1,
         REBOOTING2,
-        SAFEMODE
+        SAFEMODE,
+        USER
     } state;
 
     EventScheduler sched;
@@ -53,11 +73,14 @@ void runPixels(void* args)
                 if (state != SAFEMODE)
                     sched.schedule(SAFEMODE, 0);
             }
+            else if (rpa->isSet())
+                sched.schedule(USER, 0);
             else if (state != IDLE)
                 sched.schedule(IDLE, 0);
         }
         
         sched.update();
+        bool usr = false;
         
         while (!sched.currentEvents.empty())
         {
@@ -138,16 +161,26 @@ void runPixels(void* args)
                     r.rate.setHertz(2);
                     state = SAFEMODE;
                 }
+
+                case USER:
+                {
+                    for (unsigned i = 0; i < NUM_PXL; ++i)
+                        leds[i] = rpa->leds[i];
+                    usr = true;
+                }
            }
            sched.currentEvents.pop();
         }
 
-        for (unsigned i = 0; i < NUM_PXL; i++)
+        if (!usr)
         {
-            leds[i].setRGB(
-                r.rate.getStageCos(r.offset * i) * r.max, 
-                g.rate.getStageCos(b.offset * i) * g.max, 
-                b.rate.getStageCos(g.offset * i) * b.max);
+            for (unsigned i = 0; i < NUM_PXL; ++i)
+            {
+                leds[i].setRGB(
+                    r.rate.getStageCos(r.offset * i) * r.max, 
+                    g.rate.getStageCos(b.offset * i) * g.max, 
+                    b.rate.getStageCos(g.offset * i) * b.max);
+            }
         }
 
         FastLED.show();

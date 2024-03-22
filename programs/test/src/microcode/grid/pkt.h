@@ -51,7 +51,7 @@ class GridPacket
             unsigned receiver,
             unsigned id,
             const uint8_t* data,
-            unsigned stale=10);
+            unsigned stale=20);
         GridPacket(const uint8_t* data, unsigned len, unsigned stale=20);
         GridPacket(const GridPacket& other);
 

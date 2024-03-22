@@ -57,7 +57,7 @@ class GridMessageHub
         GridMessageHub(
             unsigned numIO, 
             unsigned broadcast=100, 
-            unsigned maxBroadcastBonusIDs=5,
+            unsigned maxBroadcastBonusIDs=9,
             unsigned ping=1000);
 
         unsigned id();
@@ -131,7 +131,7 @@ class GridMessageHub
         Hash<Hash<MessageStore>> _inbound;
         std::vector<IO> _ios;
 
-        IDFilter _graveyard;
+        IDFilter _graveyard = IDFilter((unsigned) 8e6);
         uint16_t _id;
         Hash<PingData> _pings;
         unsigned _ping;

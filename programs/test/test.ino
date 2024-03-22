@@ -11,7 +11,7 @@
 #include <WiFi.h>
 #include <ESPmDNS.h>
 
-Rate                robotStatePost(25);
+Rate                robotStatePost(50);
 
 SPIClass            spiBus(VSPI);
 MCP23S08            mcp(spiBus, MCP_CS, MCP_RST);
@@ -23,10 +23,12 @@ PVar<WiFiData>      wifiData("/wifi");
 GridMessageHub      hub(2);
 SharedGridBuffer    robotState("RobotState", (int) GridMessageHub::Priority::USER);
 SharedGridBuffer    robotControl("RobotControl", (int) GridMessageHub::Priority::USER);
+SharedGridBuffer    robotLighting("RobotLighting", (int) GridMessageHub::Priority::USER);
 
 unsigned            adcReadPin = 0;
 sh2_SensorValue_t   sensorValue;
 StageState          ss;
+RunPixelsArgs       rpa;
 
 void setup()
 {
@@ -39,7 +41,7 @@ void setup()
     }
     else
         Log().disable();
-    
+
     {
         Log log("init");
         log << "File System";
@@ -58,8 +60,8 @@ void setup()
         runPixels, 
         "runPixels", 
         4 * 1024, 
-        NULL, 
-        2, 
+        &rpa, 
+        1, 
         NULL, 
         1);
 
@@ -153,7 +155,7 @@ void setup()
     {
         Log log("init");
         log << "Comm 0";
-        if (!suart1.init(COMM_BAUD, RX0, TX0))
+        if (!suart1.init(COMM_BAUD, RX0, TX0, false))
             log.failed();
         else
         {
@@ -165,7 +167,7 @@ void setup()
     {
         Log log("init");
         log << "Comm 1";
-        if (!suart2.init(COMM_BAUD, RX1, TX1))
+        if (!suart2.init(COMM_BAUD, RX1, TX1, false))
             log.failed();
         else
         {
@@ -179,6 +181,7 @@ void setup()
     hub.setName(wifiData.data.host);
     hub.listenFor(robotState);
     hub.listenFor(robotControl);
+    hub.listenFor(robotLighting);
     hub.setInputStream(0, *suart1.getRXStream());
     hub.setOutputStream(0, *suart1.getTXStream());
     hub.setInputStream(1, *suart2.getRXStream());
@@ -211,7 +214,7 @@ void loop()
         adcReadPin %= ADC_PORTS;
         adc.setMux(adcReadPin + ADS1120::AIN0_AVSS);
     }
-    
+
     suart1.read();
     suart2.read();
 
@@ -249,4 +252,22 @@ void loop()
     }
     else
         robotControl.unlock();
+    
+    robotLighting.lock();
+    if (robotLighting.canRead(hub.id()))
+    {
+        SetLEDS leds;
+        if (robotLighting.data[hub.id()].buf.size() >= sizeof(SetLEDS))
+            leds = *((SetLEDS*) robotLighting.data[hub.id()].buf.data());
+        robotLighting.unlock();
+
+        rpa.lock.lock();
+        for (unsigned i = 0; i < NUM_PXL; ++i)
+            rpa.leds[i].setRGB(leds.rgb[i].r, leds.rgb[i].g, leds.rgb[i].b);
+        rpa.set = true;
+        rpa.timer.reset();
+        rpa.lock.unlock();
+    }
+    else
+        robotLighting.unlock();
 }

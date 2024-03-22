@@ -3,6 +3,8 @@
 #include "microcode/hal/hal.h"
 #include "microcode/hardware/suart.h"
 
+#include "defines.h"
+
 struct Eular 
 {
   float yaw;
@@ -44,12 +46,6 @@ PACK(struct StageState
     } sensors;
 });
 
-PACK(struct SetDevice
-{
-    uint8_t driver;
-    uint8_t on;
-});
-
 struct WiFiData
 {
     char ssid[64];
@@ -61,4 +57,16 @@ PACK(struct SetDrivers
 {
     uint8_t stage;
     StageState::Drivers drivers;
+});
+
+PACK(struct SetLEDS
+{
+    struct RGB
+    {
+        uint8_t r;
+        uint8_t g;
+        uint8_t b;
+    };
+
+    RGB rgb[NUM_PXL];
 });

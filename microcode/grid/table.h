@@ -49,7 +49,7 @@ class NetworkTable
         IDFilter filter;
         unsigned currentRandom;
 
-        NetworkTable(unsigned priority=1, unsigned newRandTimer=200, unsigned expire=1e6);
+        NetworkTable(unsigned priority=1, unsigned newRandTimer=200, unsigned expire=4e6);
 
         void update();
         void writeNode(unsigned id, Node& node);

@@ -23,7 +23,7 @@ PACK(struct SafeMode
 {
     unsigned bootAttempts = 0;
     unsigned bootSuccesses = 0;
-    unsigned bootDifferential = 5;
+    unsigned bootDifferential = 2;
     unsigned bootTimeout = 20e3;
 });
 
@@ -174,7 +174,7 @@ unsigned OTAUpdater::init(unsigned port, bool safemode)
                 
                 lock.lock();
 
-                if (!isRebooting() || !isUpdating())
+                if (!isRebooting() && !isUpdating())
                 {
                     Log(LOG_HEADER) << "No update received. Proceeding with normal boot";
                     filesys.remove(safeModeFile);
